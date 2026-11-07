@@ -1,16 +1,64 @@
-# React + Vite
+# ClientLocker
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+**Secure Document Management Portal**
 
-Currently, two official plugins are available:
+## Live Application
+https://client-locker-gules.vercel.app/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Project Overview
+ClientLocker is a document management portal designed for Vaigai Vel & Associates. It aims to provide secure and organized document management for Partners, Staff, Clients and Auditors.
 
-## React Compiler
+## Current Features
+- Login interface with frontend validation
+- Dashboard overview
+- Documents section
+- Clients section
+- Staff section
+- Recent activities
+- Logout navigation
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Technology Stack
+- Frontend: React.js, Vite, CSS
+- Version Control: Git and GitHub
+- Deployment: Vercel
+- Continuous Integration: GitHub Actions
 
-## Expanding the Oxlint configuration
+## Project Structure
+```text
+client-locker/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── docs/
+│   └── PLAN.pdf
+├── public/
+├── src/
+│   ├── App.jsx
+│   ├── App.css
+│   └── index.css
+├── package.json
+└── README.md
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Run Locally
+```bash
+npm install
+npm run dev
+```
+
+## Build
+```bash
+npm run build
+```
+
+## Current Status
+Milestone 1 – Planning and Setup
+
+- React application created
+- Initial login and dashboard UI completed
+- GitHub repository configured
+- GitHub Actions build check passed
+- Frontend deployed using Vercel
+
+**Note:** Authentication is currently frontend-only. Backend, database and real authentication will be implemented in later milestones.
+
