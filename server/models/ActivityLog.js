@@ -10,7 +10,7 @@ const activityLogSchema = new mongoose.Schema(
 
     action: {
       type: String,
-      enum: ["login", "upload", "open"],
+      enum: ["login", "upload", "open", "download"],
       required: true,
     },
 

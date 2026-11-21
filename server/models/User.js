@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["partner", "staff", "client"],
+      enum: ["partner", "staff", "client", "auditor"],
       required: true,
     },
 
@@ -36,22 +36,30 @@ const userSchema = new mongoose.Schema(
     },
 
     firm: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "Firm",
-  default: null,
-},
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Firm",
+      default: null,
+    },
 
-client: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "Client",
-  default: null,
-},
+    client: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+    },
 
-designation: {
-  type: String,
-  trim: true,
-  default: "",
-},
+    // Clients an auditor is allowed to review
+    assignedClients: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Client",
+      },
+    ],
+
+    designation: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   { timestamps: true }
 );

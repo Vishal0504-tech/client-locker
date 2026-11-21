@@ -12,9 +12,23 @@ const { protect } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 const supabase = require("../config/supabase");
 
+const SecureDownload = require("../models/SecureDownload");
+const User = require("../models/User");
+
+
+
+
+
+const {
+  generateDownloadToken,
+  hashDownloadToken,
+} = require("../utils/secureDownloadUtils");
+
 const BUCKET = "clientlocker-documents";
 
+
 // Validate actual PDF, JPG and PNG file signatures
+
 const handleUpload = (req, res, next) => {
   upload.single("document")(req, res, (error) => {
     if (error) {
@@ -60,6 +74,7 @@ const handleUpload = (req, res, next) => {
 
 // POST /api/documents
 // Upload document to Supabase Storage
+// Auditor is not allowed to upload.
 
 router.post("/", protect, handleUpload, async (req, res) => {
   let uploadedStoragePath = null;
@@ -178,7 +193,7 @@ router.post("/", protect, handleUpload, async (req, res) => {
 
 
 // GET /api/documents
-// List documents based on user role
+// List documents based on user role.
 
 router.get("/", protect, async (req, res) => {
   try {
@@ -201,6 +216,7 @@ router.get("/", protect, async (req, res) => {
       );
 
       filter.client = { $in: clientIds };
+
     } else if (user.role === "client") {
       if (!user.client) {
         return res.status(400).json({
@@ -209,6 +225,19 @@ router.get("/", protect, async (req, res) => {
       }
 
       filter.client = user.client;
+
+    } else if (user.role === "auditor") {
+      const auditorClients = await Client.find({
+        _id: { $in: user.assignedClients || [] },
+        firm: user.firm,
+      }).select("_id");
+
+      const clientIds = auditorClients.map(
+        (client) => client._id
+      );
+
+      filter.client = { $in: clientIds };
+
     } else {
       return res.status(403).json({
         message: "Access denied.",
@@ -237,7 +266,7 @@ router.get("/", protect, async (req, res) => {
 
 
 // GET /api/documents/:id/open
-// Securely download document from Supabase Storage
+// Open document from private Supabase Storage.
 
 router.get("/:id/open", protect, async (req, res) => {
   try {
@@ -254,7 +283,7 @@ router.get("/:id/open", protect, async (req, res) => {
       });
     }
 
-    // Check role-based access
+    // Check role-based access.
 
     if (user.role === "staff") {
       const assignedClient = await Client.findOne({
@@ -268,6 +297,7 @@ router.get("/:id/open", protect, async (req, res) => {
           message: "Document not found or access denied.",
         });
       }
+
     } else if (user.role === "client") {
       if (
         !user.client ||
@@ -277,13 +307,31 @@ router.get("/:id/open", protect, async (req, res) => {
           message: "Document not found or access denied.",
         });
       }
+
+    } else if (user.role === "auditor") {
+      const assignedClient = await Client.findOne({
+        _id: document.client,
+        firm: user.firm,
+      });
+
+      const hasAssignment = (user.assignedClients || []).some(
+        (clientId) =>
+          clientId.toString() === document.client.toString()
+      );
+
+      if (!assignedClient || !hasAssignment) {
+        return res.status(404).json({
+          message: "Document not found or access denied.",
+        });
+      }
+
     } else if (user.role !== "partner") {
       return res.status(403).json({
         message: "Access denied.",
       });
     }
 
-    // Validate Supabase storage path
+    // Validate Supabase storage path.
 
     if (
       !document.storagePath ||
@@ -295,7 +343,7 @@ router.get("/:id/open", protect, async (req, res) => {
       });
     }
 
-    // Retrieve private file from Supabase
+    // Retrieve private file from Supabase.
 
     const { data, error } = await supabase.storage
       .from(BUCKET)
@@ -316,7 +364,7 @@ router.get("/:id/open", protect, async (req, res) => {
       await data.arrayBuffer()
     );
 
-    // Secure response headers
+    // Secure response headers.
 
     res.setHeader("Content-Type", document.mimeType);
     res.setHeader(
@@ -327,7 +375,7 @@ router.get("/:id/open", protect, async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "private, no-store");
 
-    // Record document opening activity
+    // Record document opening activity.
 
     try {
       await ActivityLog.create({
@@ -357,6 +405,281 @@ router.get("/:id/open", protect, async (req, res) => {
 
     return res.status(500).json({
       message: "Failed to open document.",
+    });
+  }
+});
+
+
+// Check whether the current user can access a document.
+// Used for secure download generation and verification.
+
+const canAccessDocument = async (user, document) => {
+  if (
+    !user ||
+    !user.isActive ||
+    !user.firm ||
+    !document.firm ||
+    user.firm.toString() !== document.firm.toString()
+  ) {
+    return false;
+  }
+
+  if (user.role === "partner") {
+    return true;
+  }
+
+  if (user.role === "staff") {
+    const assignedClient = await Client.findOne({
+      _id: document.client,
+      firm: user.firm,
+      assignedStaff: user._id,
+    });
+
+    return Boolean(assignedClient);
+  }
+
+  if (user.role === "client") {
+    return Boolean(
+      user.client &&
+      document.client.toString() === user.client.toString()
+    );
+  }
+
+  if (user.role === "auditor") {
+    const hasAssignment = (user.assignedClients || []).some(
+      (clientId) =>
+        clientId.toString() === document.client.toString()
+    );
+
+    if (!hasAssignment) {
+      return false;
+    }
+
+    const assignedClient = await Client.findOne({
+      _id: document.client,
+      firm: user.firm,
+    });
+
+    return Boolean(assignedClient);
+  }
+
+  return false;
+};
+
+
+// POST /api/documents/:id/download-link
+// Generate a single-use secure download link.
+// Link expires after 10 minutes.
+
+router.post("/:id/download-link", protect, async (req, res) => {
+  try {
+    const user = req.user;
+
+    const document = await Document.findOne({
+      _id: req.params.id,
+      firm: user.firm,
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        message: "Document not found or access denied.",
+      });
+    }
+
+    const hasAccess = await canAccessDocument(user, document);
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: "You do not have permission to download this document.",
+      });
+    }
+
+    const rawToken = generateDownloadToken();
+    const tokenHash = hashDownloadToken(rawToken);
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await SecureDownload.create({
+      document: document._id,
+      user: user._id,
+      tokenHash,
+      expiresAt,
+    });
+
+    return res.status(201).json({
+      message: "Secure download link generated successfully.",
+      downloadPath: `/api/documents/download/${rawToken}`,
+      expiresAt,
+    });
+
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(404).json({
+        message: "Document not found.",
+      });
+    }
+
+    console.error("Secure download link error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to generate secure download link.",
+    });
+  }
+});
+
+
+// GET /api/documents/download/:token
+// Verify and consume a secure download link.
+
+router.get("/download/:token", async (req, res) => {
+  try {
+    const rawToken = req.params.token;
+
+    if (!/^[a-fA-F0-9]{64}$/.test(rawToken)) {
+      return res.status(400).json({
+        message: "Invalid download link.",
+      });
+    }
+
+    const tokenHash = hashDownloadToken(rawToken);
+
+    const downloadRecord = await SecureDownload.findOne({
+      tokenHash,
+      usedAt: null,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!downloadRecord) {
+      return res.status(401).json({
+        message: "Download link is invalid, expired or already used.",
+      });
+    }
+
+    // Recheck current user status from MongoDB.
+
+    const user = await User.findById(downloadRecord.user);
+
+    if (!user || !user.isActive) {
+      return res.status(403).json({
+        message: "User account is inactive or unavailable.",
+      });
+    }
+
+    // Recheck current document and firm.
+
+    const document = await Document.findOne({
+      _id: downloadRecord.document,
+      firm: user.firm,
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        message: "Document not found or access denied.",
+      });
+    }
+
+    // Recheck current ownership, staff assignment or auditor assignment.
+
+    const hasAccess = await canAccessDocument(user, document);
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: "Document access has been revoked.",
+      });
+    }
+
+    // Atomically consume the link to prevent reuse.
+
+    const consumedLink = await SecureDownload.findOneAndUpdate(
+      {
+        _id: downloadRecord._id,
+        usedAt: null,
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        $set: { usedAt: new Date() },
+      },
+      { new: true }
+    );
+
+    if (!consumedLink) {
+      return res.status(401).json({
+        message: "Download link is invalid, expired or already used.",
+      });
+    }
+
+    // Validate private storage path.
+
+    if (
+      !document.storagePath ||
+      document.storagePath.startsWith("/") ||
+      document.storagePath.split("/").includes("..")
+    ) {
+      return res.status(403).json({
+        message: "Invalid file location.",
+      });
+    }
+
+    // Download from private Supabase Storage.
+
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .download(document.storagePath);
+
+    if (error || !data) {
+      console.error(
+        "Secure file download error:",
+        error?.message || "File not found"
+      );
+
+      return res.status(404).json({
+        message: "Document file not found in storage.",
+      });
+    }
+
+    const fileBuffer = Buffer.from(
+      await data.arrayBuffer()
+    );
+
+    res.setHeader("Content-Type", document.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(document.originalName)}`
+    );
+    res.setHeader("Content-Length", fileBuffer.length);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+
+    // Record successful download activity.
+
+    try {
+      await ActivityLog.create({
+        user: user._id,
+        action: "download",
+        document: document._id,
+        client: document.client,
+        details: `${user.role} downloaded ${document.originalName}.`,
+      });
+    } catch (logError) {
+      console.error(
+        "Download activity logging failed:",
+        logError.message
+      );
+    }
+
+    return res.end(fileBuffer);
+
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(404).json({
+        message: "Document not found.",
+      });
+    }
+
+    console.error("Secure download error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to download document.",
     });
   }
 });
