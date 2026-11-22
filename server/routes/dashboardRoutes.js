@@ -96,6 +96,46 @@ router.get("/", protect, async (req, res) => {
       });
     }
 
+
+
+    // AUDITOR DASHBOARD
+    if (user.role === "auditor") {
+      const assignedClients = await Client.find({
+        _id: { $in: user.assignedClients || [] },
+        firm: user.firm,
+      }).select("_id");
+
+      const clientIds = assignedClients.map((client) => client._id);
+
+      const [totalDocuments, totalTasks, pendingTasks] =
+        await Promise.all([
+          Document.countDocuments({
+            firm: user.firm,
+            client: { $in: clientIds },
+          }),
+          Checklist.countDocuments({
+            firm: user.firm,
+            client: { $in: clientIds },
+          }),
+          Checklist.countDocuments({
+            firm: user.firm,
+            client: { $in: clientIds },
+            isCompleted: false,
+          }),
+        ]);
+
+      return res.status(200).json({
+        role: "auditor",
+        dashboard: {
+          totalClients: assignedClients.length,
+          totalDocuments,
+          totalTasks,
+          pendingTasks,
+        },
+      });
+    }
+
+
     return res.status(403).json({
       message: "Invalid user role.",
     });

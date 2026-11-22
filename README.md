@@ -1,188 +1,148 @@
 # ClientLocker – Secure Document Management Portal
 
-A secure, role-based document management portal developed for **Vaigai Vel & Associates** as part of the **Vizdale Full-Stack Developer Internship**.
+A secure, role-based document management platform developed for **Vaigai Vel & Associates** as part of the **Vizdale Full-Stack Developer Internship**.
 
-## Live Application
+ClientLocker helps firms manage clients, staff, documents, checklists, and access permissions through a centralized web application.
 
-**Frontend:** [ClientLocker – Vercel](https://client-locker-gules.vercel.app/)
+## Project Links
 
-**Backend API:** https://client-locker.onrender.com
+- **Live Application:** https://client-locker-gules.vercel.app/
+- **Backend API:** https://client-locker.onrender.com
+- **GitHub Repository:** https://github.com/Vishal0504-tech/client-locker
 
-**GitHub Repository:** [ClientLocker – GitHub](https://github.com/Vishal0504-tech/client-locker)
+## Demo Videos
 
-## Project Demo Video
+- **Milestone 2 – Application Workflow:** https://drive.google.com/file/d/1UJRQ7t9y3Cci7qf9F_2su0NTC1vvT0df/view?usp=sharing
+- **Milestone 3 – AI Checklist Suggestion Demo:** https://drive.google.com/file/d/13vxZRjkGU5zzJaxGiy0BOByXVi90Xw5q/view?usp=sharing
 
-Watch the 60-second ClientLocker demonstration:
+## About the Project
 
-[**View ClientLocker M2 Demo Video**](https://drive.google.com/file/d/1UJRQ7t9y3Cci7qf9F_2su0NTC1vvT0df/view?usp=sharing)
+ClientLocker is designed to simplify document management and improve secure collaboration between partners, staff members, clients, and auditors.
 
-**Video Access:** Anyone with the link can view.
+The application provides role-based access control so that each user can access only the information and operations permitted for their role.
 
-## Project Overview
+The third milestone extends the application with advanced access restrictions, auditor access, secure document downloads, client Magic Link authentication, and AI-powered checklist suggestions.
 
-ClientLocker is a secure document management portal designed for Vaigai Vel & Associates.
+## User Roles
 
-It helps Partners, Staff, and Clients manage client information, documents, and checklist activities through a centralized web application.
+| Role | Permissions |
+|---|---|
+| Partner | Manage clients, staff, documents, checklists, and firm activities |
+| Staff | Access assigned clients and manage permitted document and checklist operations |
+| Client | Access their own dashboard and permitted documents |
+| Auditor | View-only access to authorized information |
 
-The application provides role-based access control to ensure users can access only the information and features permitted for their roles.
+## Main Features
 
-It uses MongoDB Atlas for database management and Supabase Storage for secure cloud-based document storage.
-
-## User Roles and Permissions
-
-### 1. Partner
-
-- View firm dashboard and statistics.
-- View all registered clients and staff members.
-- Access firm documents and checklist tasks.
-- View recent activity logs.
-- Manage and monitor firm-level information.
-
-### 2. Staff
-
-- View assigned clients.
-- Access documents belonging to assigned clients.
-- View and update assigned checklist tasks.
-- Access role-specific dashboard information.
-
-### 3. Client
-
-- View their own profile.
-- Upload and access their own documents.
-- View and update their checklist tasks.
-- Access their own dashboard information.
-
-## Demo Login Credentials
-
-The following sample accounts are available for application testing.
-
-| Role | Email | Password |
-|---|---|---|
-| Partner | partner1@clientlocker.com | Partner@123 |
-| Staff | staff1@clientlocker.com | Staff@123 |
-| Client | ramesh@example.com | Client@123 |
-
-### Testing Instructions
-
-1. Open the live application.
-2. Enter the email and password for the required role.
-3. Click Login.
-4. Explore the role-specific dashboard.
-5. Test document upload and opening.
-6. Test client and staff access permissions.
-7. Test checklist functionality.
-
-> **Important:** These are sample demonstration credentials. They are intended only for project evaluation and testing. Do not use them for real or sensitive data.
-
-## Features Implemented
-
-### Authentication and Security
-
-- Email and password login.
+### 1. Authentication and Authorization
+- Secure login using JWT authentication.
 - Password hashing using bcrypt.
-- JWT-based authentication.
-- Protected API routes.
-- Role-based authorization.
-- Active account verification.
-- Secure access to documents.
-- Unauthorized document access prevention.
+- Role-based access control.
+- Protected backend API routes.
+- Separate permissions for Partner, Staff, Client, and Auditor roles.
 
-### Dashboard
-
+### 2. Dashboard
+- Overview of documents, clients, staff, and pending tasks.
 - Role-specific dashboard information.
-- Client, staff, document, and checklist statistics.
-- Dynamic dashboard data from backend APIs.
+- Recent activity information.
 
-### Client Management
+### 3. Client Management
+- View and manage client records.
+- Assign clients to staff members.
+- Restrict staff access to assigned clients.
+- Ensure clients can access only their own information.
 
-- View client information.
-- Display assigned staff details.
-- Role-based client access.
+### 4. Staff Management
+- View staff information.
+- Manage staff access.
+- Control which clients staff members can access.
 
-### Staff Management
+### 5. Document Management
+- Upload client documents.
+- Store files using private Supabase Storage.
+- Open authorized documents securely.
+- Restrict document access based on user roles and permissions.
 
-- Partner-only staff listing.
-- Display staff names, email addresses, and designations.
-- Role-based access restrictions.
+### 6. Checklist Management
+- Display client-specific checklist items.
+- Track pending and completed tasks.
+- Update checklist status based on permissions.
 
-### Document Management
+### 7. Client Magic Link Authentication
+- Support passwordless client login using email Magic Links.
+- Generate time-limited authentication links.
+- Validate Magic Link tokens before login.
+- Redirect authenticated clients to their respective dashboards.
 
-- Upload PDF, JPG, and PNG files.
-- Maximum file size of 4 MB.
-- File type and file signature validation.
-- Secure document opening.
-- Role-based document access.
-- Private cloud file storage using Supabase.
-- Document metadata stored in MongoDB Atlas.
-- Secure file upload and retrieval through the backend.
+### 8. Secure Download Links
+- Generate expiring document download links.
+- Restrict access to authorized users.
+- Validate download link expiry before allowing access.
 
-### Checklist Management
+### 9. Auditor Role
+- Introduced a separate Auditor role.
+- Provides view-only access to authorized records.
+- Prevents unauthorized modification of application data.
 
-- Display checklist tasks based on user role.
-- Mark tasks as completed.
-- Save completion status in MongoDB.
-- Restrict checklist updates according to user permissions.
+### 10. Activity Logging and Access Management
+- Record important user activities.
+- Track document-related actions.
+- Support access removal.
+- Maintain activity records for monitoring user operations.
 
-### Activity Logging
-
-- Record user login activities.
-- Record document upload activities.
-- Record document opening activities.
-- Partner-only activity log access.
+### 11. AI-Powered Checklist Suggestions
+- Integrated Google Gemini AI for document-based checklist suggestions.
+- Analyze uploaded documents.
+- Generate relevant checklist suggestions based on document content.
+- Help users identify checklist items that may be required for a document.
 
 ## Technology Stack
 
-| Category | Technology |
+| Category | Technologies |
 |---|---|
 | Frontend | React.js, Vite, CSS |
 | Backend | Node.js, Express.js |
 | Database | MongoDB Atlas |
-| Cloud File Storage | Supabase Storage |
+| File Storage | Supabase Storage |
 | Authentication | JWT, bcrypt |
-| API Integration | Axios |
+| AI Integration | Google Gemini API |
+| Email Integration | Resend |
+| API Communication | Axios |
 | File Upload | Multer |
+| Testing | Jest, Supertest |
 | Version Control | Git, GitHub |
 | Frontend Deployment | Vercel |
 | Backend Deployment | Render |
-| Continuous Integration | GitHub Actions |
+| CI/CD | GitHub Actions |
 
-## Application Architecture
-
-ClientLocker uses a separated frontend, backend, database, and cloud storage architecture.
+## System Architecture
 
 ```text
                  USER
                    |
                    v
-          React.js Frontend
-                Vercel
+         React + Vite Frontend
+               (Vercel)
                    |
                    v
-          Node.js + Express
-                Render
+           Express REST API
+               (Render)
                    |
           +--------+--------+
-          |                 |
-          v                 v
-      MongoDB Atlas     Supabase Storage
-      Database          Private Bucket
-          |                 |
-          v                 v
-    User Information    Actual Documents
-    Client Details      PDF / JPG / PNG
-    Document Metadata
-    Checklist Data
-    Activity Logs
+          |        |        |
+          v        v        v
+       MongoDB  Supabase  Gemini AI
+       Atlas    Storage   API
+          |        |
+          v        v
+      Application Private
+         Data     Documents
+
+                   |
+                   v
+                Resend
+             Email Service
 ```
-
-### Storage Explanation
-
-- **MongoDB Atlas:** Stores user details, client information, document metadata, checklist records, and activity logs.
-- **Supabase Storage:** Stores the actual uploaded PDF, JPG, and PNG files.
-- **Render:** Hosts the backend API and handles authentication, authorization, document uploads, and secure document retrieval.
-- **Vercel:** Hosts the React frontend.
-
-The Supabase bucket `clientlocker-documents` is configured as a private bucket. Files are accessed through the authenticated backend rather than public file links.
 
 ## Project Structure
 
@@ -199,11 +159,18 @@ client-locker/
 ├── public/
 │
 ├── src/
+│   ├── assets/
+│   │   ├── hero.png
+│   │   ├── react.svg
+│   │   └── vite.svg
+│   │
 │   ├── services/
 │   │   └── api.js
+│   │
 │   ├── App.jsx
 │   ├── App.css
-│   └── index.css
+│   ├── index.css
+│   └── main.jsx
 │
 ├── server/
 │   ├── config/
@@ -215,280 +182,227 @@ client-locker/
 │   │   └── uploadMiddleware.js
 │   │
 │   ├── models/
-│   │   ├── User.js
-│   │   ├── Firm.js
+│   │   ├── ActivityLog.js
+│   │   ├── Checklist.js
 │   │   ├── Client.js
 │   │   ├── Document.js
-│   │   ├── Checklist.js
-│   │   └── ActivityLog.js
+│   │   ├── Firm.js
+│   │   ├── MagicLink.js
+│   │   ├── SecureDownload.js
+│   │   └── User.js
 │   │
 │   ├── routes/
+│   │   ├── activityRoutes.js
+│   │   ├── auditorRoutes.js
 │   │   ├── authRoutes.js
-│   │   ├── dashboardRoutes.js
-│   │   ├── clientRoutes.js
-│   │   ├── staffRoutes.js
-│   │   ├── documentRoutes.js
+│   │   ├── checklistRoutes.backup.js
 │   │   ├── checklistRoutes.js
-│   │   └── activityRoutes.js
+│   │   ├── clientRoutes.js
+│   │   ├── dashboardRoutes.js
+│   │   ├── documentRoutes.js
+│   │   └── staffRoutes.js
 │   │
-│   ├── .gitignore
-│   ├── package.json
+│   ├── scripts/
+│   │   └── expireTestDownload.js
+│   │
+│   ├── services/
+│   │   └── aiChecklistService.js
+│   │
+│   ├── tests/
+│   │   ├── app.test.js
+│   │   └── setup.js
+│   │
+│   ├── uploads/
+│   │
+│   ├── utils/
+│   │   ├── magicLinkUtils.js
+│   │   └── secureDownloadUtils.js
+│   │
+│   ├── app.js
 │   ├── seed.js
-│   └── server.js
+│   ├── server.js
+│   ├── package.json
+│   └── .gitignore
 │
 ├── package.json
 ├── package-lock.json
+├── vercel.json
 └── README.md
 ```
 
-> The `.env` file, `node_modules`, and local uploaded files are excluded from Git for security and storage reasons.
+*Note: The project structure excludes node_modules and dependency files. The uploads folder contains uploaded demonstration documents.*
 
-## Sample Database Data
+## Demo Login Credentials
 
-The project includes a seed script to create sample data in MongoDB:
+The following are sample accounts created for application demonstration.
 
-- 1 Firm
-- 2 Partners
-- 6 Staff Members
-- 10 Clients
-- 50 Checklist Items
+| Role | Email | Password |
+|---|---|---|
+| Partner | partner1@clientlocker.com | Partner@123 |
+| Staff | staff1@clientlocker.com | Staff@123 |
+| Client | ramesh@example.com | Client@123 |
 
-### To Seed the Database
+Client accounts using Magic Link authentication should follow the email login flow.
 
-```bash
-cd server
-npm install
-npm run seed
-```
+**Note:** These are demonstration credentials. Do not use real client information or production passwords in this repository.
 
-> **Warning:** The seed script clears existing Firm, User, Client, and Checklist records before inserting sample data. Do not run it against a database containing records you need to preserve.
+## Database and Sample Data
 
-## Run the Project Locally
+The seed script is used to populate the application with sample records.
+
+The existing sample dataset includes:
+
+- 1 firm
+- 2 partners
+- 6 staff members
+- 10 clients
+- 50 checklist items
+
+The seed script should be used carefully because it may clear and recreate existing sample records.
+
+## Installation and Local Setup
 
 ### Prerequisites
 
-- Node.js
-- npm
-- MongoDB Atlas account
-- Supabase account
+- Node.js and npm
+- MongoDB Atlas account or MongoDB connection
+- Supabase project
+- Gemini API key
+- Resend account for email integration
 
-### Step 1: Clone the Repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Vishal0504-tech/client-locker.git
 cd client-locker
 ```
 
-### Step 2: Install Frontend Dependencies
+### 2. Install Frontend Dependencies
 
 ```bash
 npm install
 ```
 
-### Step 3: Install Backend Dependencies
+### 3. Install Backend Dependencies
 
 ```bash
 cd server
 npm install
 ```
 
-### Step 4: Configure Environment Variables
+### 4. Configure Environment Variables
 
-Create a `.env` file inside the `server` folder.
+Create a `.env` file inside the server directory and configure the required values according to the environment variable names used in the application.
+
+Typical configuration includes:
 
 ```env
 PORT=5000
 MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=your_secure_jwt_secret
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_secret_key
+JWT_SECRET=your_jwt_secret
+
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+GEMINI_API_KEY=your_gemini_api_key
+
+RESEND_API_KEY=your_resend_api_key
+RESEND_FROM_EMAIL=ClientLocker <onboarding@resend.dev>
+MAGIC_LINK_TEST_EMAIL=your_verified_test_email
 ```
 
-Replace the example values with your own credentials.
+**Important:** Keep all API keys, database credentials, and secret values inside environment variables. Never commit `.env` files to GitHub. Verify the exact variable names against the current backend source code before running the application.
 
-**Important Security Notes:**
-
-- Never share your `.env` file.
-- Never upload secret keys to GitHub.
-- Keep the Supabase service role key on the backend only.
-- Use a private Supabase storage bucket.
-
-### Step 5: Start the Backend
-
-From the `server` folder:
+### 5. Start the Backend
 
 ```bash
+cd server
 npm run dev
 ```
 
-Backend runs at:
+The backend runs on:
 
 ```text
 http://localhost:5000
 ```
 
-### Step 6: Start the Frontend
+### 6. Start the Frontend
 
-Open another terminal in the project root:
+Open another terminal:
 
 ```bash
+cd client-locker
 npm run dev
 ```
 
-The frontend runs at the local Vite development URL displayed in the terminal.
+The frontend runs on the local Vite development URL displayed in the terminal.
 
-For local development, configure the frontend API base URL in `src/services/api.js` to:
+## Automated Testing
+
+The project includes automated backend tests using Jest and Supertest.
+
+The tests are intended to verify application routes, authentication, access permissions, and important backend functionality.
+
+The Milestone 3 testing requirement includes at least 10 automated tests.
+
+The test files are located in:
 
 ```text
-http://localhost:5000/api
+server/
+└── tests/
+    ├── app.test.js
+    └── setup.js
 ```
 
-For production deployment, use:
-
-```text
-https://client-locker.onrender.com/api
-```
-
-## Build the Frontend
-
-To generate the production build, run this command from the project root:
+Run the backend tests using the test script configured in `server/package.json`:
 
 ```bash
-npm run build
+npm test
 ```
 
-## Deployment Configuration
+## Deployment
 
-### Frontend – Vercel
+| Component | Platform |
+|---|---|
+| Frontend | Vercel |
+| Backend | Render |
+| Database | MongoDB Atlas |
+| File Storage | Supabase Storage |
+| AI Service | Google Gemini API |
+| Email Service | Resend |
+| CI/CD | GitHub Actions |
 
-- Frontend deployed using Vercel.
-- Connected to the GitHub repository.
-- Production frontend URL: https://client-locker-gules.vercel.app/
+The frontend communicates with the deployed Express backend through API requests.
 
-### Backend – Render
+## Milestone Progress
 
-- Node.js and Express backend deployed using Render.
-- Backend URL: https://client-locker.onrender.com
-- Backend environment variables configured in Render.
+| Milestone | Work |
+|---|---|
+| M1 | Initial application setup, first page deployment, project planning, and basic workflow |
+| M2 | Backend integration, role-based login, client and staff management, document upload, and dashboard |
+| M3 | Advanced access control, Magic Link login, secure download links, Auditor role, activity tracking, and AI checklist suggestions |
+| M4 | Final improvements, performance optimization, documentation, and final demonstration |
 
-### Database – MongoDB Atlas
+## Future Enhancements
 
-- Stores application data and document metadata.
-- Connected securely through the backend environment variables.
+- Improve document search and filtering.
+- Add more AI-assisted document management features.
+- Improve notification and reminder functionality.
+- Enhance application performance and accessibility.
+- Add further reporting and analytics features.
 
-### Cloud Storage – Supabase
+## Internship Project Information
 
-- Project: ClientLocker.
-- Bucket: `clientlocker-documents`.
-- Bucket access: Private.
-- Stores actual uploaded documents.
-- Backend uses the Supabase service role key through environment variables.
+**Project Name:** ClientLocker – Secure Document Management Portal
 
-## Testing Completed
+**Organization:** Vizdale
 
-The following functional and security tests were successfully completed.
+**Client:** Vaigai Vel & Associates
 
-### Authentication Testing
+**Internship Role:** Full-Stack Developer Intern
 
-1. Partner login verification.
-2. Staff login verification.
-3. Client login verification.
-4. Invalid password handling.
-5. JWT token authentication.
-6. Missing or invalid token verification.
+**Repository:** https://github.com/Vishal0504-tech/client-locker
 
-### Role-Based Access Testing
+ 
 
-7. Partner access verification.
-8. Staff assigned-client access verification.
-9. Client own-profile access verification.
-10. Protected API route verification.
-11. Unauthorized role access rejection.
-
-### Document Management Testing
-
-12. Valid PDF upload.
-13. JPG and PNG file validation.
-14. Invalid file type rejection.
-15. Maximum 4 MB file size validation.
-16. Document metadata storage in MongoDB.
-17. Actual document storage in Supabase.
-18. Secure document opening.
-19. Production document upload and opening verification.
-
-### Security Testing
-
-20. Staff attempting to open another client's document.
-21. Client attempting to open another client's document.
-22. Unauthorized document ID access verification.
-
-**Security Test Results:**
-
-| Security Test | Expected Result | Actual Result |
-|---|---|---|
-| Staff opens assigned client's document | Allowed | Successful |
-| Staff opens another client's document | Blocked | HTTP 404 |
-| Client opens own document | Allowed | Successful |
-| Client opens another client's document | Blocked | HTTP 404 |
-
-The unauthorized access tests confirmed that changing the document ID does not allow Staff or Client users to access another client's documents.
-
-### Other Testing
-
-23. Checklist completion and database persistence.
-24. Activity logging verification.
-25. Frontend production build verification.
-26. Local backend and Supabase integration testing.
-27. Live Vercel and Render deployment testing.
-
-## Current Project Status
-
-### Milestone 1 – Planning and Setup
-
-- Project planning completed.
-- React application setup completed.
-- Initial login and dashboard UI developed.
-- GitHub repository configured.
-- GitHub Actions build check passed.
-- Frontend deployed using Vercel.
-
-### Milestone 2 – Backend Development and Frontend Integration
-
-- Node.js and Express backend implemented.
-- MongoDB Atlas database connected.
-- Database models and sample data created.
-- JWT authentication and role-based authorization implemented.
-- Dashboard, Clients, Staff, Documents, Checklist, and Activity APIs developed.
-- Frontend integrated with backend APIs.
-- Document upload and secure opening implemented.
-- Supabase cloud storage integration completed.
-- Document metadata stored in MongoDB and actual files stored in Supabase.
-- Production backend deployed using Render.
-- Frontend deployed using Vercel.
-- Functional and security testing completed.
-- Unauthorized document access prevention verified.
-- M2 source code committed and pushed to GitHub.
-- 60-second project demonstration prepared.
-
-<badge>Milestone 2 Completed</badge>
-
-## Future Improvements
-
-- Add email notifications for document uploads and checklist updates.
-- Implement document version management.
-- Add advanced document search and filtering.
-- Improve dashboard analytics and reporting.
-- Add password reset functionality.
-- Introduce additional security monitoring and audit features.
-
-## Internship Project Details
-
-**Organization:** Vizdale  
-**Project Title:** ClientLocker – Secure Document Management Portal  
-**Client:** Vaigai Vel & Associates  
-**Internship Role:** Full-Stack Developer Intern  
-**Milestone:** M2 – Backend Development and Frontend Integration
-
----
-
-**Developed as part of the Vizdale Full-Stack Developer Internship.**
+ 

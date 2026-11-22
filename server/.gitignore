@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.test
 uploads/
 # Test PDF files
 *-test.pdf

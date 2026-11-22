@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import API from './services/api';
 import './App.css';
 
@@ -25,10 +25,172 @@ const [uploadError, setUploadError] = useState('');
 const [uploadSuccess, setUploadSuccess] = useState('');
 const [checklistsData, setChecklistsData] = useState([]);
 const [checklistsError, setChecklistsError] = useState('');
+// AI Checklist Suggestions
+const [aiSelectedClient, setAiSelectedClient] = useState('');
+const [aiSuggestions, setAiSuggestions] = useState([]);
+const [aiLoading, setAiLoading] = useState(false);
+const [aiError, setAiError] = useState('');
+const [aiSuccess, setAiSuccess] = useState('');
+const [selectedSuggestions, setSelectedSuggestions] = useState([]);
+
+ // Manual Checklist Fallback
+const [manualTitle, setManualTitle] = useState('');
+const [manualDescription, setManualDescription] = useState('');
+const [manualCategory, setManualCategory] = useState('General');
 const [staffData, setStaffData] = useState([]);
 const [staffError, setStaffError] = useState('');
 const [activityData, setActivityData] = useState([]);
 const [activityError, setActivityError] = useState('');
+const [magicLinkStatus, setMagicLinkStatus] = useState('');
+const magicLinkAttempted = useRef(false);
+const [magicLinkMessage, setMagicLinkMessage] = useState('');
+const [magicLinkLoadingClient, setMagicLinkLoadingClient] = useState('');
+const [secureDownloadLoadingId, setSecureDownloadLoadingId] = useState('');
+const [secureDownloadMessage, setSecureDownloadMessage] = useState('');
+
+const handleSecureDownload = async (doc) => {
+  try {
+    setSecureDownloadMessage('');
+    setSecureDownloadLoadingId(doc._id);
+
+    const token = localStorage.getItem('token');
+
+    // Generate a one-time download link
+    const response = await API.post(
+      `/documents/${doc._id}/download-link`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    // Build the complete backend URL
+    const apiRoot = API.defaults.baseURL.replace(/\/api\/?$/, '');
+    const downloadUrl = `${apiRoot}${response.data.downloadPath}`;
+
+    // Download using the one-time link
+    const downloadResponse = await fetch(downloadUrl);
+
+    if (!downloadResponse.ok) {
+      let errorMessage = 'Secure download failed.';
+
+      try {
+        const errorData = await downloadResponse.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch {
+        // Keep the default error message
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const blob = await downloadResponse.blob();
+    const fileURL = window.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = fileURL;
+    link.download = doc.originalName || 'document';
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    window.URL.revokeObjectURL(fileURL);
+
+    setSecureDownloadMessage(
+      `Secure download completed: ${doc.originalName}`
+    );
+
+  } catch (error) {
+    setSecureDownloadMessage(
+      error.response?.data?.message ||
+      error.message ||
+      'Unable to download document.'
+    );
+  } finally {
+    setSecureDownloadLoadingId('');
+  }
+};
+
+
+const handleGenerateMagicLink = async (clientId) => {
+  try {
+    setMagicLinkMessage('');
+    setMagicLinkLoadingClient(clientId);
+
+    const token = localStorage.getItem('token');
+
+    const response = await API.post(
+      '/auth/magic-link',
+      { clientId },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setMagicLinkMessage(
+      response.data.message + ' Check the configured testing inbox.'
+    );
+  } catch (error) {
+    setMagicLinkMessage(
+      error.response?.data?.message || 'Unable to generate magic link.'
+    );
+  } finally {
+    setMagicLinkLoadingClient('');
+  }
+};
+
+
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const magicToken = params.get('token');
+
+  if (!magicToken || magicLinkAttempted.current) return;
+
+  magicLinkAttempted.current = true;
+
+  const verifyMagicLink = async () => {
+    try {
+      setMagicLinkStatus('Verifying your secure login link...');
+
+      const response = await API.post('/auth/magic-link/verify', {
+        token: magicToken,
+      });
+
+      const { token, user } = response.data;
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname
+      );
+
+      setUser(user);
+      setLoggedIn(true);
+      setMagicLinkStatus('Login successful!');
+    } catch (error) {
+      setMagicLinkStatus(
+        error.response?.data?.message ||
+        'Magic link verification failed. Please request a new link.'
+      );
+
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname
+      );
+    }
+  };
+
+  verifyMagicLink();
+}, []);
 
 useEffect(() => {
   if (!loggedIn || user?.role !== 'partner') return;
@@ -242,6 +404,160 @@ const handleLogin = async (e) => {
 
 
 
+
+
+const handleGenerateAISuggestions = async () => {
+  if (!aiSelectedClient) {
+    setAiError('Please select a client.');
+    return;
+  }
+
+  try {
+    setAiLoading(true);
+    setAiError('');
+    setAiSuccess('');
+    setAiSuggestions([]);
+    setSelectedSuggestions([]);
+
+    const token = localStorage.getItem('token');
+
+    const response = await API.post(
+      '/checklists/ai-suggestions',
+      { clientId: aiSelectedClient },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setAiSuggestions(response.data.suggestions || []);
+
+    if (!response.data.suggestions?.length) {
+      setAiError('No new suggestions available. Please use the manual checklist.');
+    }
+  } catch (error) {
+    setAiError(
+      error.response?.data?.message ||
+      'AI suggestions unavailable. Please use the manual checklist.'
+    );
+  } finally {
+    setAiLoading(false);
+  }
+};
+
+const handleApproveAISuggestions = async () => {
+  const approvedSuggestions = aiSuggestions.filter(
+    (_, index) => selectedSuggestions.includes(index)
+  );
+
+  if (!approvedSuggestions.length) {
+    setAiError('Please select at least one suggestion.');
+    return;
+  }
+
+  try {
+    setAiLoading(true);
+    setAiError('');
+
+    const token = localStorage.getItem('token');
+
+    const response = await API.post(
+      '/checklists/ai-suggestions/approve',
+      {
+        clientId: aiSelectedClient,
+        suggestions: approvedSuggestions,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    setAiSuccess(response.data.message);
+    setAiSuggestions([]);
+    setSelectedSuggestions([]);
+
+    const refreshed = await API.get('/checklists', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    setChecklistsData(refreshed.data.checklists);
+  } catch (error) {
+    setAiError(
+      error.response?.data?.message ||
+      'Unable to save approved suggestions.'
+    );
+  } finally {
+    setAiLoading(false);
+  }
+};
+
+
+
+const handleAddManualChecklist = async (e) => {
+  e.preventDefault();
+
+  if (!aiSelectedClient || !manualTitle.trim()) {
+    setAiError("Please select a client and enter a task title.");
+    return;
+  }
+
+  const token = localStorage.getItem("token");
+
+  if (!token) {
+    setAiError("Please log in again.");
+    return;
+  }
+
+  try {
+    setAiLoading(true);
+    setAiError("");
+    setAiSuccess("");
+
+    const config = {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+
+    await API.post(
+      "/checklists/manual",
+      {
+        clientId: aiSelectedClient,
+        title: manualTitle.trim(),
+        description: manualDescription.trim(),
+        category: manualCategory,
+      },
+      config
+    );
+
+    setManualTitle("");
+    setManualDescription("");
+    setManualCategory("General");
+
+    const response = await API.get("/checklists", config);
+    setChecklistsData(response.data.checklists);
+
+    setAiSuccess("Manual checklist task created successfully!");
+
+  } catch (error) {
+    setAiError(
+      error.response?.data?.message ||
+      "Unable to create manual checklist task."
+    );
+  } finally {
+    setAiLoading(false);
+  }
+};
+
+
+
+
+
 const handleDocumentUpload = async (e) => {
   e.preventDefault();
 
@@ -349,6 +665,18 @@ const handleDocumentUpload = async (e) => {
           <p className="subtitle">Secure Document Management Portal</p>
           <h2>Welcome Back</h2>
           <p className="description">Sign in to access your account</p>
+
+          {magicLinkStatus && (
+  <p
+    style={{
+      color: magicLinkStatus.includes('successful') ? 'green' : '#2563eb',
+      fontSize: '14px',
+      marginBottom: '15px',
+    }}
+  >
+    {magicLinkStatus}
+  </p>
+)}
 
           <form onSubmit={handleLogin}>
             <label>Email Address</label>
@@ -459,6 +787,7 @@ const handleDocumentUpload = async (e) => {
     }
 
 
+
 if (activePage === 'Documents') {
   return (
     <>
@@ -471,69 +800,80 @@ if (activePage === 'Documents') {
         <p style={{ color: 'red' }}>{documentsError}</p>
       )}
 
-
-
-<div className="table-card" style={{ marginBottom: '20px', padding: '20px' }}>
-  <h3>Upload New Document</h3>
-
-  <form onSubmit={handleDocumentUpload}>
-    {user?.role !== 'client' && (
-      <div style={{ marginBottom: '15px' }}>
-        <label>Select Client</label>
-        <select
-          value={selectedClient}
-          onChange={(e) => setSelectedClient(e.target.value)}
-          required
+      {secureDownloadMessage && (
+        <p
           style={{
-            display: 'block',
-            width: '100%',
-            padding: '10px',
-            marginTop: '8px',
+            color: secureDownloadMessage.includes('completed')
+              ? 'green'
+              : 'red',
+            marginBottom: '12px',
           }}
         >
-          <option value="">Choose a client</option>
+          {secureDownloadMessage}
+        </p>
+      )}
 
-          {clientsData.map((client) => (
-            <option key={client._id} value={client._id}>
-              {client.name}
-            </option>
-          ))}
-        </select>
+      <div
+        className="table-card"
+        style={{ marginBottom: '20px', padding: '20px' }}
+      >
+        <h3>Upload New Document</h3>
+
+        <form onSubmit={handleDocumentUpload}>
+          {user?.role !== 'client' && (
+            <div style={{ marginBottom: '15px' }}>
+              <label>Select Client</label>
+              <select
+                value={selectedClient}
+                onChange={(e) => setSelectedClient(e.target.value)}
+                required
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  padding: '10px',
+                  marginTop: '8px',
+                }}
+              >
+                <option value="">Choose a client</option>
+
+                {clientsData.map((client) => (
+                  <option key={client._id} value={client._id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div style={{ marginBottom: '15px' }}>
+            <label>Select Document (PDF, JPG, PNG)</label>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              onChange={(e) => {
+                setSelectedFile(e.target.files[0] || null);
+                setUploadError('');
+                setUploadSuccess('');
+              }}
+              required
+              style={{ display: 'block', marginTop: '8px' }}
+            />
+            <small>Maximum file size: 4 MB</small>
+          </div>
+
+          {uploadError && (
+            <p style={{ color: 'red' }}>{uploadError}</p>
+          )}
+
+          {uploadSuccess && (
+            <p style={{ color: 'green' }}>{uploadSuccess}</p>
+          )}
+
+          <button type="submit" disabled={uploadLoading}>
+            {uploadLoading ? 'Uploading...' : 'Upload Document'}
+          </button>
+        </form>
       </div>
-    )}
-
-    <div style={{ marginBottom: '15px' }}>
-      <label>Select Document (PDF, JPG, PNG)</label>
-      <input
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={(e) => {
-          setSelectedFile(e.target.files[0] || null);
-          setUploadError('');
-          setUploadSuccess('');
-        }}
-        required
-        style={{ display: 'block', marginTop: '8px' }}
-      />
-      <small>Maximum file size: 4 MB</small>
-    </div>
-
-    {uploadError && (
-      <p style={{ color: 'red' }}>{uploadError}</p>
-    )}
-
-    {uploadSuccess && (
-      <p style={{ color: 'green' }}>{uploadSuccess}</p>
-    )}
-
-    <button type="submit" disabled={uploadLoading}>
-      {uploadLoading ? 'Uploading...' : 'Upload Document'}
-    </button>
-  </form>
-</div>
-
-
-
 
       <div className="table-card">
         <h3>Document List ({documentsData.length})</h3>
@@ -546,7 +886,7 @@ if (activePage === 'Documents') {
               <th>Client</th>
               <th>Uploaded By</th>
               <th>Upload Date</th>
-              <th>Action</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -561,7 +901,9 @@ if (activePage === 'Documents') {
                   <td>
                     {new Date(doc.createdAt).toLocaleDateString()}
                   </td>
+
                   <td>
+                    {/* Existing Open button */}
                     <button
                       onClick={async () => {
                         try {
@@ -593,6 +935,17 @@ if (activePage === 'Documents') {
                     >
                       Open
                     </button>
+
+                    {/* New Secure Download button */}
+                    <button
+                      onClick={() => handleSecureDownload(doc)}
+                      disabled={secureDownloadLoadingId === doc._id}
+                      style={{ marginLeft: '8px' }}
+                    >
+                      {secureDownloadLoadingId === doc._id
+                        ? 'Downloading...'
+                        : 'Secure Download'}
+                    </button>
                   </td>
                 </tr>
               ))
@@ -607,6 +960,7 @@ if (activePage === 'Documents') {
     </>
   );
 }
+
 
 
 
@@ -632,7 +986,8 @@ if (activePage === 'Clients') {
               <th>Email</th>
               <th>Company</th>
               <th>Assigned Staff</th>
-              <th>Status</th>
+<th>Status</th>
+{user.role === 'partner' && <th>Magic Link</th>}
             </tr>
           </thead>
 
@@ -651,6 +1006,23 @@ if (activePage === 'Clients') {
                       {client.status}
                     </span>
                   </td>
+                  {user.role === 'partner' && (
+                    <td>
+                      <button
+                        onClick={() => handleGenerateMagicLink(client._id)}
+                        disabled={magicLinkLoadingClient === client._id}
+                      >
+                        {magicLinkLoadingClient === client._id
+                          ? 'Generating...'
+                          : 'Generate Magic Link'}
+                      </button>
+                      {magicLinkMessage && (
+                        <p style={{ color: 'green' }}>
+                          {magicLinkMessage}
+                        </p>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))
             ) : (
@@ -704,6 +1076,194 @@ if (activePage === 'Checklist') {
         </div>
       </div>
 
+
+
+
+{(user?.role === 'partner' || user?.role === 'staff') && (
+  <div
+    className="table-card"
+    style={{ marginBottom: '20px', padding: '24px' }}
+  >
+    <h3>AI Checklist Assistant</h3>
+    <p style={{ marginBottom: '20px', color: '#64748b' }}>
+      Generate document collection tasks using AI. Review and approve before saving.
+    </p>
+
+    {/* AI Client Selection */}
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: '15px',
+        flexWrap: 'wrap',
+        marginBottom: '20px',
+      }}
+    >
+      <div style={{ flex: '1', minWidth: '220px' }}>
+        <label style={{ display: 'block', marginBottom: '8px' }}>
+          Select Client
+        </label>
+
+        <select
+          value={aiSelectedClient}
+          onChange={(e) => setAiSelectedClient(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '11px',
+            borderRadius: '6px',
+            border: '1px solid #d1d5db',
+            boxSizing: 'border-box',
+          }}
+        >
+          <option value="">Choose a client</option>
+          {clientsData.map((client) => (
+            <option key={client._id} value={client._id}>
+              {client.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <button
+        onClick={handleGenerateAISuggestions}
+        disabled={aiLoading || !aiSelectedClient}
+        style={{ minHeight: '42px' }}
+      >
+        {aiLoading ? 'Generating...' : 'Generate AI Suggestions'}
+      </button>
+    </div>
+
+    {aiError && (
+      <p style={{ color: 'red', marginBottom: '12px' }}>
+        {aiError}
+      </p>
+    )}
+
+    {aiSuccess && (
+      <p style={{ color: 'green', marginBottom: '12px' }}>
+        {aiSuccess}
+      </p>
+    )}
+
+    {/* AI Suggestions */}
+    {aiSuggestions.length > 0 && (
+      <div style={{ marginBottom: '20px' }}>
+        <h4>Review AI Suggestions</h4>
+
+        {aiSuggestions.map((suggestion, index) => (
+          <div
+            key={index}
+            style={{
+              border: '1px solid #e2e8f0',
+              padding: '14px',
+              marginBottom: '10px',
+              borderRadius: '8px',
+            }}
+          >
+            <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={selectedSuggestions.includes(index)}
+                onChange={(e) => {
+                  setSelectedSuggestions((previous) =>
+                    e.target.checked
+                      ? [...previous, index]
+                      : previous.filter((item) => item !== index)
+                  );
+                }}
+              />
+              <strong>{suggestion.title}</strong>
+            </label>
+
+            <p>{suggestion.description}</p>
+            <small>Category: {suggestion.category}</small>
+          </div>
+        ))}
+
+        <button
+          onClick={handleApproveAISuggestions}
+          disabled={aiLoading || selectedSuggestions.length === 0}
+        >
+          Approve Selected Tasks
+        </button>
+      </div>
+    )}
+
+    <hr style={{ margin: '24px 0', border: '0', borderTop: '1px solid #e2e8f0' }} />
+
+    {/* Manual Checklist */}
+    <h4>Manual Checklist Entry</h4>
+    <p style={{ color: '#64748b', marginBottom: '18px' }}>
+      If AI is unavailable, enter a checklist task manually.
+    </p>
+
+    <form
+      onSubmit={handleAddManualChecklist}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '16px',
+        alignItems: 'end',
+      }}
+    >
+      <div>
+        <label style={{ display: 'block', marginBottom: '8px' }}>
+          Task Title
+        </label>
+        <input
+          type="text"
+          placeholder="Enter task title"
+          value={manualTitle}
+          onChange={(e) => setManualTitle(e.target.value)}
+          required
+          style={{ width: '100%', boxSizing: 'border-box', padding: '11px' }}
+        />
+      </div>
+
+      <div>
+        <label style={{ display: 'block', marginBottom: '8px' }}>
+          Description
+        </label>
+        <input
+          type="text"
+          placeholder="Enter description"
+          value={manualDescription}
+          onChange={(e) => setManualDescription(e.target.value)}
+          style={{ width: '100%', boxSizing: 'border-box', padding: '11px' }}
+        />
+      </div>
+
+      <div>
+        <label style={{ display: 'block', marginBottom: '8px' }}>
+          Category
+        </label>
+        <select
+          value={manualCategory}
+          onChange={(e) => setManualCategory(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '11px',
+          }}
+        >
+          <option value="General">General</option>
+          <option value="Financial">Financial</option>
+          <option value="Tax">Tax</option>
+          <option value="Administrative">Administrative</option>
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" disabled={aiLoading} style={{ width: '100%', minHeight: '42px' }}>
+          {aiLoading ? 'Saving...' : 'Add Manual Task'}
+        </button>
+      </div>
+    </form>
+  </div>
+)}
+
+
+
       <div className="table-card">
         <h3>Checklist Items</h3>
 
@@ -714,7 +1274,7 @@ if (activePage === 'Checklist') {
               <th>Category</th>
               <th>Description</th>
               <th>Status</th>
-              <th>Action</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -924,7 +1484,7 @@ function ActivityTable({ activities = [], activityError = '', user }) {
             <thead>
               <tr>
                 <th>User</th>
-                <th>Action</th>
+                <th>Actions</th>
                 <th>Document</th>
                 <th>Client</th>
                 <th>Date & Time</th>
