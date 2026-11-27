@@ -276,10 +276,10 @@ router.get("/:id/open", protect, async (req, res) => {
   firm: user.firm,
 });
     if (!document) {
-      return res.status(404).json({
-        message: "Document not found.",
-      });
-    }
+  return res.status(404).json({
+    message: "Document not found.",
+  });
+}
 
     const client = await Client.findById(document.client);
 
@@ -449,11 +449,30 @@ router.get("/download/:token", protect, async (req, res) => {
   try {
     const rawToken = req.params.token;
 
-    if (!/^[a-fA-F0-9]{64}$/.test(rawToken)) {
-      return res.status(400).json({
-        message: "Invalid download link.",
-      });
-    }
+    const logBlockedDownload = async (reason, documentId = null) => {
+  try {
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "blocked",
+      blocked: true,
+      document: documentId,
+      details: `Blocked download attempt: ${reason}`,
+    });
+  } catch (logError) {
+    console.error(
+      "Blocked download logging failed:",
+      logError.message
+    );
+  }
+};
+
+   if (!/^[a-fA-F0-9]{64}$/.test(rawToken)) {
+  await logBlockedDownload("Invalid download token");
+
+  return res.status(400).json({
+    message: "Invalid download link.",
+  });
+}
 
     const tokenHash = hashDownloadToken(rawToken);
 
@@ -464,10 +483,14 @@ router.get("/download/:token", protect, async (req, res) => {
     });
 
     if (!downloadRecord) {
-      return res.status(401).json({
-        message: "Download link is invalid, expired or already used.",
-      });
-    }
+  await logBlockedDownload(
+    "Download link is invalid, expired or already used"
+  );
+
+  return res.status(401).json({
+    message: "Download link is invalid, expired or already used.",
+  });
+}
 
     // Recheck current user status from MongoDB.
 
@@ -480,6 +503,11 @@ if (
   !user.isActive ||
   user._id.toString() !== downloadRecord.user.toString()
 ) {
+  await logBlockedDownload(
+    "Inactive user or download link belongs to another user",
+    downloadRecord.document
+  );
+
   return res.status(403).json({
     message: "You are not authorized to use this download link.",
   });
@@ -493,20 +521,30 @@ if (
     });
 
     if (!document) {
-      return res.status(404).json({
-        message: "Document not found or access denied.",
-      });
-    }
+  await logBlockedDownload(
+    "Document not found or does not belong to the user's firm",
+    downloadRecord.document
+  );
+
+  return res.status(404).json({
+    message: "Document not found or access denied.",
+  });
+}
 
     // Recheck current ownership, staff assignment or auditor assignment.
 
     const hasAccess = await canAccessDocument(user, document);
 
     if (!hasAccess) {
-      return res.status(403).json({
-        message: "Document access has been revoked.",
-      });
-    }
+  await logBlockedDownload(
+    "Document access has been revoked",
+    document._id
+  );
+
+  return res.status(403).json({
+    message: "Document access has been revoked.",
+  });
+}
 
     // Atomically consume the link to prevent reuse.
 
@@ -523,11 +561,15 @@ if (
     );
 
     if (!consumedLink) {
-      return res.status(401).json({
-        message: "Download link is invalid, expired or already used.",
-      });
-    }
+  await logBlockedDownload(
+    "Download link expired or was already consumed",
+    document._id
+  );
 
+  return res.status(401).json({
+    message: "Download link is invalid, expired or already used.",
+  });
+}
     // Validate private storage path.
 
     if (

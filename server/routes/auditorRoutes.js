@@ -7,7 +7,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Client = require("../models/Client");
 const { protect, authorize } = require("../middleware/authMiddleware");
-
+const ActivityLog = require("../models/ActivityLog");
 // POST /api/auditors
 // Partner creates an auditor account.
 router.post("/", protect, authorize("partner"), async (req, res) => {
@@ -149,8 +149,44 @@ router.patch(
         });
       }
 
-      auditor.assignedClients = uniqueClientIds;
-      await auditor.save();
+      const previousClientIds = auditor.assignedClients.map((id) =>
+  String(id)
+);
+
+const newClientIds = uniqueClientIds.map(String);
+
+const revokedClientIds = previousClientIds.filter(
+  (id) => !newClientIds.includes(id)
+);
+
+const grantedClientIds = newClientIds.filter(
+  (id) => !previousClientIds.includes(id)
+);
+
+auditor.assignedClients = uniqueClientIds;
+await auditor.save();
+
+try {
+  for (const clientId of revokedClientIds) {
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "access_revoke",
+      client: clientId,
+      details: `Auditor access revoked from ${auditor.name} (${auditor._id})`,
+    });
+  }
+
+  for (const clientId of grantedClientIds) {
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "access_grant",
+      client: clientId,
+      details: `Auditor access granted to ${auditor.name} (${auditor._id})`,
+    });
+  }
+} catch (logError) {
+  console.error("Auditor access logging failed:", logError.message);
+}
 
       return res.status(200).json({
         message: "Auditor client access updated successfully.",

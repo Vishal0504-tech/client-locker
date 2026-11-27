@@ -5,13 +5,18 @@ const router = express.Router();
 
 const Client = require("../models/Client");
 const User = require("../models/User");
+const ActivityLog = require("../models/ActivityLog");
 const Checklist = require("../models/Checklist");
+
 const {
   protect,
   authorize,
   requireClientAccess,
 } = require("../middleware/authMiddleware");
-const { generateChecklistSuggestions } = require("../services/aiChecklistService");
+
+const {
+  generateChecklistSuggestions,
+} = require("../services/aiChecklistService");
 
 // GET /api/clients
 router.get("/", protect, async (req, res) => {
@@ -81,64 +86,122 @@ router.patch(
   authorize("partner"),
   requireClientAccess((req) => req.params.id),
   async (req, res) => {
-  try {
-    const { assignedStaffId } = req.body;
-    const client = req.client;
+    try {
+      const { assignedStaffId } = req.body;
+      const client = req.client;
 
-    // Null means remove the current staff assignment
-    if (assignedStaffId === null) {
-      client.assignedStaff = null;
+      // Remove the current staff assignment
+      if (assignedStaffId === null) {
+        const previousStaffId = client.assignedStaff
+          ? String(client.assignedStaff)
+          : null;
+
+        if (!previousStaffId) {
+          return res.status(400).json({
+            message: "No staff assignment exists for this client.",
+          });
+        }
+
+        client.assignedStaff = null;
+        await client.save();
+
+        try {
+          await ActivityLog.create({
+            user: req.user._id,
+            action: "access_revoke",
+            client: client._id,
+            details: `Staff access removed from client ${client.name}. Previous staff ID: ${previousStaffId}`,
+          });
+        } catch (logError) {
+          console.error(
+            "Staff access revoke logging failed:",
+            logError.message
+          );
+        }
+
+        return res.status(200).json({
+          message: "Staff assignment removed successfully.",
+          client,
+        });
+      }
+
+      // Validate staff ID
+      if (
+        typeof assignedStaffId !== "string" ||
+        !mongoose.Types.ObjectId.isValid(assignedStaffId)
+      ) {
+        return res.status(400).json({
+          message: "A valid staff ID is required.",
+        });
+      }
+
+      // Verify staff belongs to the same firm and is active
+      const staff = await User.findOne({
+        _id: assignedStaffId,
+        firm: req.user.firm,
+        role: "staff",
+        isActive: true,
+      });
+
+      if (!staff) {
+        return res.status(404).json({
+          message: "Active staff member not found in your firm.",
+        });
+      }
+
+      // Capture previous assignment before changing it
+      const previousStaffId = client.assignedStaff
+        ? String(client.assignedStaff)
+        : null;
+
+      const newStaffId = String(staff._id);
+
+      // Update staff assignment
+      client.assignedStaff = staff._id;
       await client.save();
 
+      // Log access changes only when the assignment changes
+      if (previousStaffId !== newStaffId) {
+        try {
+          if (previousStaffId) {
+            await ActivityLog.create({
+              user: req.user._id,
+              action: "access_revoke",
+              client: client._id,
+              details: `Staff access revoked from previous staff ID: ${previousStaffId} for client ${client.name}`,
+            });
+          }
+
+          await ActivityLog.create({
+            user: req.user._id,
+            action: "access_grant",
+            client: client._id,
+            details: `Staff access granted to ${staff.name} (${staff._id}) for client ${client.name}`,
+          });
+        } catch (logError) {
+          console.error(
+            "Staff assignment logging failed:",
+            logError.message
+          );
+        }
+      }
+
+      const updatedClient = await Client.findById(client._id)
+        .populate("assignedStaff", "name email designation");
+
       return res.status(200).json({
-        message: "Staff assignment removed successfully.",
-        client,
+        message: "Staff assigned successfully.",
+        client: updatedClient,
+      });
+    } catch (error) {
+      console.error("Client assignment error:", error.message);
+
+      return res.status(500).json({
+        message: "Failed to update staff assignment.",
       });
     }
-
-    if (
-      typeof assignedStaffId !== "string" ||
-      !mongoose.Types.ObjectId.isValid(assignedStaffId)
-    ) {
-      return res.status(400).json({
-        message: "A valid staff ID is required.",
-      });
-    }
-
-    // Verify staff belongs to the same firm and is active
-    const staff = await User.findOne({
-      _id: assignedStaffId,
-      firm: req.user.firm,
-      role: "staff",
-      isActive: true,
-    });
-
-    if (!staff) {
-      return res.status(404).json({
-        message: "Active staff member not found in your firm.",
-      });
-    }
-
-    client.assignedStaff = staff._id;
-    await client.save();
-
-    const updatedClient = await Client.findById(client._id)
-      .populate("assignedStaff", "name email designation");
-
-    return res.status(200).json({
-      message: "Staff assigned successfully.",
-      client: updatedClient,
-    });
-  } catch (error) {
-    console.error("Client assignment error:", error.message);
-
-    return res.status(500).json({
-      message: "Failed to update staff assignment.",
-
-    });
   }
-});
-
+);
 
 // POST /api/checklists/ai-suggestions
 // Generate AI checklist suggestions for an accessible client
@@ -148,35 +211,36 @@ router.post(
   authorize("partner", "staff"),
   requireClientAccess((req) => req.body.clientId),
   async (req, res) => {
-  try {
-    const user = req.user;
-    const client = req.client;
+    try {
+      const user = req.user;
+      const client = req.client;
 
-    const existingTasks = await Checklist.find({
-      client: client._id,
-      firm: user.firm,
-    }).select("title");
+      const existingTasks = await Checklist.find({
+        client: client._id,
+        firm: user.firm,
+      }).select("title");
 
-    const suggestions = await generateChecklistSuggestions(
-      {
-        status: client.status,
-      },
-      existingTasks
-    );
+      const suggestions = await generateChecklistSuggestions(
+        {
+          status: client.status,
+        },
+        existingTasks
+      );
 
-    return res.status(200).json({
-      message: "AI suggestions generated successfully.",
-      suggestions,
-    });
-  } catch (error) {
-    console.error("AI checklist suggestion error:", error.message);
+      return res.status(200).json({
+        message: "AI suggestions generated successfully.",
+        suggestions,
+      });
+    } catch (error) {
+      console.error("AI checklist suggestion error:", error.message);
 
-    return res.status(503).json({
-      message: "AI suggestions are temporarily unavailable. Please use manual checklist entry.",
-    });
+      return res.status(503).json({
+        message:
+          "AI suggestions are temporarily unavailable. Please use manual checklist entry.",
+      });
+    }
   }
-});
-
+);
 
 // POST /api/checklists/ai-suggestions/approve
 // Save only suggestions explicitly approved by staff or partner
@@ -186,92 +250,93 @@ router.post(
   authorize("partner", "staff"),
   requireClientAccess((req) => req.body.clientId),
   async (req, res) => {
-  try {
-    const { suggestions } = req.body;
-    const user = req.user;
-    const client = req.client;
+    try {
+      const { suggestions } = req.body;
+      const user = req.user;
+      const client = req.client;
 
-    if (
-      !Array.isArray(suggestions) ||
-      suggestions.length === 0 ||
-      suggestions.length > 5
-    ) {
-      return res.status(400).json({
-        message: "Please approve between 1 and 5 suggestions.",
-      });
-    }
-
-    const existingTasks = await Checklist.find({
-      client: client._id,
-      firm: user.firm,
-    }).select("title");
-
-    const existingTitles = new Set(
-      existingTasks.map((task) => task.title.trim().toLowerCase())
-    );
-
-    const approvedTasks = [];
-
-    for (const task of suggestions) {
       if (
-        !task ||
-        typeof task.title !== "string" ||
-        typeof task.description !== "string" ||
-        typeof task.category !== "string"
+        !Array.isArray(suggestions) ||
+        suggestions.length === 0 ||
+        suggestions.length > 5
       ) {
         return res.status(400).json({
-          message: "Each suggestion must contain title, description and category.",
+          message: "Please approve between 1 and 5 suggestions.",
         });
       }
 
-      const title = task.title.trim().slice(0, 150);
-      const description = task.description.trim().slice(0, 500);
-      const category = task.category.trim().slice(0, 50);
-
-      if (!title || !description || !category) {
-        return res.status(400).json({
-          message: "Checklist fields cannot be empty.",
-        });
-      }
-
-      if (existingTitles.has(title.toLowerCase())) {
-        continue;
-      }
-
-      existingTitles.add(title.toLowerCase());
-
-      approvedTasks.push({
-        title,
-        description,
-        category,
+      const existingTasks = await Checklist.find({
         client: client._id,
         firm: user.firm,
-        assignedTo: client.assignedStaff || null,
-        createdBy: user._id,
+      }).select("title");
+
+      const existingTitles = new Set(
+        existingTasks.map((task) => task.title.trim().toLowerCase())
+      );
+
+      const approvedTasks = [];
+
+      for (const task of suggestions) {
+        if (
+          !task ||
+          typeof task.title !== "string" ||
+          typeof task.description !== "string" ||
+          typeof task.category !== "string"
+        ) {
+          return res.status(400).json({
+            message:
+              "Each suggestion must contain title, description and category.",
+          });
+        }
+
+        const title = task.title.trim().slice(0, 150);
+        const description = task.description.trim().slice(0, 500);
+        const category = task.category.trim().slice(0, 50);
+
+        if (!title || !description || !category) {
+          return res.status(400).json({
+            message: "Checklist fields cannot be empty.",
+          });
+        }
+
+        if (existingTitles.has(title.toLowerCase())) {
+          continue;
+        }
+
+        existingTitles.add(title.toLowerCase());
+
+        approvedTasks.push({
+          title,
+          description,
+          category,
+          client: client._id,
+          firm: user.firm,
+          assignedTo: client.assignedStaff || null,
+          createdBy: user._id,
+        });
+      }
+
+      if (approvedTasks.length === 0) {
+        return res.status(400).json({
+          message: "No new checklist tasks to save.",
+        });
+      }
+
+      const savedTasks = await Checklist.insertMany(approvedTasks);
+
+      return res.status(201).json({
+        message: "Approved checklist suggestions saved successfully.",
+        count: savedTasks.length,
+        checklists: savedTasks,
+      });
+    } catch (error) {
+      console.error("AI checklist approval error:", error.message);
+
+      return res.status(500).json({
+        message: "Failed to save approved checklist suggestions.",
       });
     }
-
-    if (approvedTasks.length === 0) {
-      return res.status(400).json({
-        message: "No new checklist tasks to save.",
-      });
-    }
-
-    const savedTasks = await Checklist.insertMany(approvedTasks);
-
-    return res.status(201).json({
-      message: "Approved checklist suggestions saved successfully.",
-      count: savedTasks.length,
-      checklists: savedTasks,
-    });
-  } catch (error) {
-    console.error("AI checklist approval error:", error.message);
-
-    return res.status(500).json({
-      message: "Failed to save approved checklist suggestions.",
-    });
   }
-});
-
+);
 
 module.exports = router;
