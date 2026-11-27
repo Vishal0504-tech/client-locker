@@ -5,7 +5,12 @@ const router = express.Router();
 
 const Client = require("../models/Client");
 const User = require("../models/User");
-const { protect, authorize } = require("../middleware/authMiddleware");
+const Checklist = require("../models/Checklist");
+const {
+  protect,
+  authorize,
+  requireClientAccess,
+} = require("../middleware/authMiddleware");
 const { generateChecklistSuggestions } = require("../services/aiChecklistService");
 
 // GET /api/clients
@@ -41,6 +46,14 @@ router.get("/", protect, async (req, res) => {
         _id: user.client,
         firm: user.firm,
       }).populate("assignedStaff", "name email designation");
+    }
+
+    // AUDITOR: View only assigned clients in the same firm
+    else if (user.role === "auditor") {
+      clients = await Client.find({
+        _id: { $in: user.assignedClients || [] },
+        firm: user.firm,
+      }).populate("assignedStaff", "name email designation");
     } else {
       return res.status(403).json({
         message: "Access denied.",
@@ -62,28 +75,15 @@ router.get("/", protect, async (req, res) => {
 
 // PATCH /api/clients/:id/assign
 // PARTNER ONLY: Assign, reassign or unassign staff
-router.patch("/:id/assign", protect, authorize("partner"), async (req, res) => {
+router.patch(
+  "/:id/assign",
+  protect,
+  authorize("partner"),
+  requireClientAccess((req) => req.params.id),
+  async (req, res) => {
   try {
-    const { id } = req.params;
     const { assignedStaffId } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        message: "Invalid client ID.",
-      });
-    }
-
-    // Find client within partner's firm
-    const client = await Client.findOne({
-      _id: id,
-      firm: req.user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
+    const client = req.client;
 
     // Null means remove the current staff assignment
     if (assignedStaffId === null) {
@@ -142,44 +142,15 @@ router.patch("/:id/assign", protect, authorize("partner"), async (req, res) => {
 
 // POST /api/checklists/ai-suggestions
 // Generate AI checklist suggestions for an accessible client
-router.post("/ai-suggestions", protect, async (req, res) => {
+router.post(
+  "/ai-suggestions",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   try {
-    const { clientId } = req.body;
     const user = req.user;
-
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({
-        message: "A valid client ID is required.",
-      });
-    }
-
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({
-        message: "Only partners and staff can generate suggestions.",
-      });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
-
-    // Staff can only access their assigned clients
-    if (
-      user.role === "staff" &&
-      (!client.assignedStaff ||
-        client.assignedStaff.toString() !== user._id.toString())
-    ) {
-      return res.status(403).json({
-        message: "You are not assigned to this client.",
-      });
-    }
+    const client = req.client;
 
     const existingTasks = await Checklist.find({
       client: client._id,
@@ -209,22 +180,16 @@ router.post("/ai-suggestions", protect, async (req, res) => {
 
 // POST /api/checklists/ai-suggestions/approve
 // Save only suggestions explicitly approved by staff or partner
-router.post("/ai-suggestions/approve", protect, async (req, res) => {
+router.post(
+  "/ai-suggestions/approve",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   try {
-    const { clientId, suggestions } = req.body;
+    const { suggestions } = req.body;
     const user = req.user;
-
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({
-        message: "Access denied.",
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({
-        message: "A valid client ID is required.",
-      });
-    }
+    const client = req.client;
 
     if (
       !Array.isArray(suggestions) ||
@@ -233,27 +198,6 @@ router.post("/ai-suggestions/approve", protect, async (req, res) => {
     ) {
       return res.status(400).json({
         message: "Please approve between 1 and 5 suggestions.",
-      });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
-
-    if (
-      user.role === "staff" &&
-      (!client.assignedStaff ||
-        client.assignedStaff.toString() !== user._id.toString())
-    ) {
-      return res.status(403).json({
-        message: "You are not assigned to this client.",
       });
     }
 

@@ -71,7 +71,14 @@ const handleSecureDownload = async (doc) => {
     const downloadUrl = `${apiRoot}${response.data.downloadPath}`;
 
     // Download using the one-time link
-    const downloadResponse = await fetch(downloadUrl);
+    // Download using the one-time link with JWT authentication
+// Download using the one-time link with JWT authentication
+    const downloadResponse = await fetch(downloadUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     if (!downloadResponse.ok) {
       let errorMessage = 'Secure download failed.';

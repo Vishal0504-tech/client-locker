@@ -1,14 +1,21 @@
 
-const { test, before, after } = require("node:test");
+const { test, before, after, mock } = require("node:test");
+
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 const { mongoose, app } = require("./setup");
-
+const supabase = require("../config/supabase");
 const Firm = require("../models/Firm");
 const User = require("../models/User");
 const Client = require("../models/Client");
+const Document = require("../models/Document");
+const SecureDownload = require("../models/SecureDownload");
+
+const {
+  hashDownloadToken,
+} = require("../utils/secureDownloadUtils");
 
 let firm;
 let partner;
@@ -19,6 +26,7 @@ let clientUser;
 let partnerToken;
 let staffToken;
 let clientToken;
+let testDocument;
 
 const testId = crypto.randomBytes(5).toString("hex");
 
@@ -69,6 +77,17 @@ before(async () => {
     client: client._id,
   });
 
+  testDocument = await Document.create({
+  originalName: "test-document.pdf",
+  storedName: "test-document.pdf",
+  mimeType: "application/pdf",
+  size: 100,
+  storagePath: `${firm._id}/${client._id}/test-document.pdf`,
+  uploadedBy: partner._id,
+  client: client._id,
+  firm: firm._id,
+});
+
   partnerToken = jwt.sign(
     { id: partner._id, role: partner.role },
     process.env.JWT_SECRET,
@@ -89,6 +108,15 @@ before(async () => {
 });
 
 after(async () => {
+
+  await SecureDownload.deleteMany({
+  user: { $in: [partner?._id, staff?._id, clientUser?._id].filter(Boolean) },
+});
+
+if (testDocument?._id) {
+  await Document.deleteOne({ _id: testDocument._id });
+}
+
   if (mongoose.connection.readyState === 1) {
     await User.deleteMany({
       _id: { $in: [partner?._id, staff?._id, clientUser?._id].filter(Boolean) },
@@ -223,5 +251,143 @@ test("10. Login rejects incorrect password", async () => {
 
   if (response.status !== 401) {
     throw new Error(`Expected 401, received ${response.status}`);
+  }
+});
+
+// TEST 11: Secure download rejects missing JWT
+test("11. Secure download rejects missing JWT", async () => {
+  const response = await request(app)
+    .get(`/api/documents/download/${crypto.randomBytes(32).toString("hex")}`);
+
+  if (response.status !== 401) {
+    throw new Error(`Expected 401, received ${response.status}`);
+  }
+});
+
+// TEST 12: Secure download rejects invalid JWT
+test("12. Secure download rejects invalid JWT", async () => {
+  const response = await request(app)
+    .get(`/api/documents/download/${crypto.randomBytes(32).toString("hex")}`)
+    .set("Authorization", "Bearer invalid-token");
+
+  if (response.status !== 401) {
+    throw new Error(`Expected 401, received ${response.status}`);
+  }
+});
+
+// TEST 13: Secure download rejects another user's JWT
+test("13. Secure download rejects a different user", async () => {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+
+  await SecureDownload.create({
+    document: testDocument._id,
+    user: partner._id,
+    tokenHash: hashDownloadToken(rawToken),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+  });
+
+  const response = await request(app)
+    .get(`/api/documents/download/${rawToken}`)
+    .set("Authorization", `Bearer ${staffToken}`);
+
+  if (response.status !== 403) {
+    throw new Error(`Expected 403, received ${response.status}`);
+  }
+});
+
+// TEST 14: Secure download rejects expired links
+test("14. Secure download rejects expired links", async () => {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+
+  await SecureDownload.create({
+    document: testDocument._id,
+    user: partner._id,
+    tokenHash: hashDownloadToken(rawToken),
+    expiresAt: new Date(Date.now() - 60 * 1000),
+  });
+
+  const response = await request(app)
+    .get(`/api/documents/download/${rawToken}`)
+    .set("Authorization", `Bearer ${partnerToken}`);
+
+  if (response.status !== 401) {
+    throw new Error(`Expected 401, received ${response.status}`);
+  }
+});
+
+// TEST 15: Secure download rejects reused links
+test("15. Secure download rejects reused links", async () => {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+
+  await SecureDownload.create({
+    document: testDocument._id,
+    user: partner._id,
+    tokenHash: hashDownloadToken(rawToken),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    usedAt: new Date(),
+  });
+
+  const response = await request(app)
+    .get(`/api/documents/download/${rawToken}`)
+    .set("Authorization", `Bearer ${partnerToken}`);
+
+  if (response.status !== 401) {
+    throw new Error(`Expected 401, received ${response.status}`);
+  }
+});
+
+// TEST 16: Authorized user can successfully download a document
+test("16. Authorized user can download a document", async () => {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+
+  await SecureDownload.create({
+    document: testDocument._id,
+    user: partner._id,
+    tokenHash: hashDownloadToken(rawToken),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+  });
+
+  const storageMock = mock.method(
+    supabase.storage,
+    "from",
+    () => ({
+      download: async () => ({
+        data: new Blob(
+          [Buffer.from("Test PDF content")],
+          { type: "application/pdf" }
+        ),
+        error: null,
+      }),
+    })
+  );
+
+  try {
+    const response = await request(app)
+      .get(`/api/documents/download/${rawToken}`)
+      .set("Authorization", `Bearer ${partnerToken}`);
+
+    if (response.status !== 200) {
+      throw new Error(
+        `Expected 200, received ${response.status}: ${response.text}`
+      );
+    }
+
+    if (!response.headers["content-disposition"]?.includes("attachment")) {
+      throw new Error("Download attachment header is missing.");
+    }
+
+    if (!response.body.equals(Buffer.from("Test PDF content"))) {
+      throw new Error("Downloaded file content does not match.");
+    }
+
+    const savedToken = await SecureDownload.findOne({
+      tokenHash: hashDownloadToken(rawToken),
+    });
+
+    if (!savedToken?.usedAt) {
+      throw new Error("Download token was not marked as used.");
+    }
+  } finally {
+    storageMock.mock.restore();
   }
 });

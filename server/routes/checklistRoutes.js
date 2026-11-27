@@ -1,11 +1,15 @@
 
 const express = require("express");
-const mongoose = require("mongoose");
 const router = express.Router();
 
 const Checklist = require("../models/Checklist");
 const Client = require("../models/Client");
-const { protect } = require("../middleware/authMiddleware");
+const {
+  protect,
+  authorize,
+  userCanAccessClient,
+  requireClientAccess,
+} = require("../middleware/authMiddleware");
 const { generateChecklistSuggestions } = require("../services/aiChecklistService");
 
 
@@ -78,24 +82,16 @@ router.get("/", protect, async (req, res) => {
 
 
 // MANUAL CHECKLIST TASK CREATION
-router.post("/manual", protect, async (req, res) => {
+router.post(
+  "/manual",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   try {
     const user = req.user;
-    const { clientId, title, description, category } = req.body;
-
-    // Only Partner and Staff can create tasks
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({
-        message: "Access denied.",
-      });
-    }
-
-    // Validate client ID
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({
-        message: "Valid client ID is required.",
-      });
-    }
+    const { title, description, category } = req.body;
+    const client = req.client;
 
     // Validate task fields
     if (
@@ -124,28 +120,6 @@ router.post("/manual", protect, async (req, res) => {
     ) {
       return res.status(400).json({
         message: "Valid task category is required.",
-      });
-    }
-
-    // Find client within the user's firm
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
-
-    // Staff can create tasks only for assigned clients
-    if (
-      user.role === "staff" &&
-      String(client.assignedStaff) !== String(user._id)
-    ) {
-      return res.status(403).json({
-        message: "You are not assigned to this client.",
       });
     }
 
@@ -190,50 +164,46 @@ router.patch("/:id", protect, async (req, res) => {
       });
     }
 
-    // Base filter: task must belong to the user's firm
-    let filter = {
-      _id: req.params.id,
-      firm: user.firm,
-    };
-
-    // Partner: Any task in their firm
-    if (user.role === "partner") {
-      // No additional filter needed
-    }
-
-    // Staff: Only tasks assigned to them
-    else if (user.role === "staff") {
-      filter.assignedTo = user._id;
-    }
-
-    // Client: Only tasks belonging to them
-    else if (user.role === "client") {
-      if (!user.client) {
-        return res.status(400).json({
-          message: "Client account is not linked to a client record.",
-        });
-      }
-
-      filter.client = user.client;
-    }
-
-    else {
+    if (user.role === "auditor") {
       return res.status(403).json({
         message: "Access denied.",
       });
     }
 
-    const checklist = await Checklist.findOneAndUpdate(
-      filter,
-      { isCompleted },
-      { new: true, runValidators: true }
-    );
+    if (user.role === "client" && !user.client) {
+      return res.status(400).json({
+        message: "Client account is not linked to a client record.",
+      });
+    }
+
+    const checklist = await Checklist.findById(req.params.id);
 
     if (!checklist) {
       return res.status(404).json({
-        message: "Checklist task not found or access denied.",
+        message: "Checklist task not found.",
       });
     }
+
+    const client = await Client.findById(checklist.client);
+
+    if (!client || !userCanAccessClient(user, client)) {
+      return res.status(403).json({
+        message: "Access denied. You do not have permission to access this client.",
+      });
+    }
+
+    // Staff can complete only tasks assigned to them
+    if (
+      user.role === "staff" &&
+      String(checklist.assignedTo) !== String(user._id)
+    ) {
+      return res.status(403).json({
+        message: "Access denied.",
+      });
+    }
+
+    checklist.isCompleted = isCompleted;
+    await checklist.save();
 
     return res.status(200).json({
       message: "Checklist status updated successfully.",
@@ -251,34 +221,15 @@ router.patch("/:id", protect, async (req, res) => {
 
 
 // AI CHECKLIST SUGGESTIONS
-router.post("/ai-suggestions", protect, async (req, res) => {
+router.post(
+  "/ai-suggestions",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   try {
-    const { clientId } = req.body;
     const user = req.user;
-
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({ message: "Valid client ID is required." });
-    }
-
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({ message: "Access denied." });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({ message: "Client not found." });
-    }
-
-    if (
-      user.role === "staff" &&
-      String(client.assignedStaff) !== String(user._id)
-    ) {
-      return res.status(403).json({ message: "You are not assigned to this client." });
-    }
+    const client = req.client;
 
     const existingTasks = await Checklist.find({
       client: client._id,
@@ -305,37 +256,19 @@ router.post("/ai-suggestions", protect, async (req, res) => {
 });
 
 // APPROVE AND SAVE AI CHECKLIST SUGGESTIONS
-router.post("/ai-suggestions/approve", protect, async (req, res) => {
+router.post(
+  "/ai-suggestions/approve",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   try {
-    const { clientId, suggestions } = req.body;
+    const { suggestions } = req.body;
     const user = req.user;
-
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({ message: "Valid client ID is required." });
-    }
-
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({ message: "Access denied." });
-    }
+    const client = req.client;
 
     if (!Array.isArray(suggestions) || suggestions.length === 0 || suggestions.length > 5) {
       return res.status(400).json({ message: "Select between 1 and 5 suggestions." });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({ message: "Client not found." });
-    }
-
-    if (
-      user.role === "staff" &&
-      String(client.assignedStaff) !== String(user._id)
-    ) {
-      return res.status(403).json({ message: "You are not assigned to this client." });
     }
 
     const existingTasks = await Checklist.find({
