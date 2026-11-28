@@ -2,11 +2,21 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const router = express.Router();
-
+const crypto = require("crypto");
 const Client = require("../models/Client");
 const User = require("../models/User");
-const { protect, authorize } = require("../middleware/authMiddleware");
-const { generateChecklistSuggestions } = require("../services/aiChecklistService");
+const ActivityLog = require("../models/ActivityLog");
+const Checklist = require("../models/Checklist");
+
+const {
+  protect,
+  authorize,
+  requireClientAccess,
+} = require("../middleware/authMiddleware");
+
+const {
+  generateChecklistSuggestions,
+} = require("../services/aiChecklistService");
 
 // GET /api/clients
 router.get("/", protect, async (req, res) => {
@@ -41,6 +51,14 @@ router.get("/", protect, async (req, res) => {
         _id: user.client,
         firm: user.firm,
       }).populate("assignedStaff", "name email designation");
+    }
+
+    // AUDITOR: View only assigned clients in the same firm
+    else if (user.role === "auditor") {
+      clients = await Client.find({
+        _id: { $in: user.assignedClients || [] },
+        firm: user.firm,
+      }).populate("assignedStaff", "name email designation");
     } else {
       return res.status(403).json({
         message: "Access denied.",
@@ -60,274 +78,473 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
-// PATCH /api/clients/:id/assign
-// PARTNER ONLY: Assign, reassign or unassign staff
-router.patch("/:id/assign", protect, authorize("partner"), async (req, res) => {
+// POST /api/clients
+// PARTNER ONLY: Create client and login account
+router.post("/", protect, authorize("partner"), async (req, res) => {
+  let createdClient = null;
+
   try {
-    const { id } = req.params;
-    const { assignedStaffId } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      company,
+      address,
+      assignedStaffId,
+    } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!name?.trim() || !email?.trim() || !phone?.trim()) {
       return res.status(400).json({
-        message: "Invalid client ID.",
+        message: "Name, email and phone are required.",
       });
     }
 
-    // Find client within partner's firm
-    const client = await Client.findOne({
-      _id: id,
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "An account with this email already exists.",
+      });
+    }
+
+    const existingClient = await Client.findOne({
+      email: normalizedEmail,
       firm: req.user.firm,
     });
 
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
+    if (existingClient) {
+      return res.status(409).json({
+        message: "This client already exists in your firm.",
       });
     }
 
-    // Null means remove the current staff assignment
-    if (assignedStaffId === null) {
-      client.assignedStaff = null;
-      await client.save();
+    let staff = null;
 
-      return res.status(200).json({
-        message: "Staff assignment removed successfully.",
-        client,
+    if (assignedStaffId) {
+      if (!mongoose.Types.ObjectId.isValid(assignedStaffId)) {
+        return res.status(400).json({
+          message: "Invalid staff ID.",
+        });
+      }
+
+      staff = await User.findOne({
+        _id: assignedStaffId,
+        firm: req.user.firm,
+        role: "staff",
+        isActive: true,
       });
+
+      if (!staff) {
+        return res.status(404).json({
+          message: "Active staff member not found.",
+        });
+      }
     }
 
-    if (
-      typeof assignedStaffId !== "string" ||
-      !mongoose.Types.ObjectId.isValid(assignedStaffId)
-    ) {
-      return res.status(400).json({
-        message: "A valid staff ID is required.",
-      });
-    }
-
-    // Verify staff belongs to the same firm and is active
-    const staff = await User.findOne({
-      _id: assignedStaffId,
+    createdClient = await Client.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      company: company?.trim() || "",
+      address: address?.trim() || "",
       firm: req.user.firm,
-      role: "staff",
-      isActive: true,
+      assignedStaff: staff?._id || null,
+      status: "active",
     });
 
-    if (!staff) {
-      return res.status(404).json({
-        message: "Active staff member not found in your firm.",
+    const temporaryPassword = crypto.randomBytes(32).toString("hex");
+
+    try {
+      await User.create({
+        name: name.trim(),
+        email: normalizedEmail,
+        password: temporaryPassword,
+        role: "client",
+        firm: req.user.firm,
+        client: createdClient._id,
+        isActive: true,
       });
+    } catch (userError) {
+      await Client.findByIdAndDelete(createdClient._id);
+      throw userError;
     }
 
-    client.assignedStaff = staff._id;
-    await client.save();
-
-    const updatedClient = await Client.findById(client._id)
-      .populate("assignedStaff", "name email designation");
-
-    return res.status(200).json({
-      message: "Staff assigned successfully.",
-      client: updatedClient,
+    return res.status(201).json({
+      message: "Client and login account created successfully.",
+      client: createdClient,
     });
   } catch (error) {
-    console.error("Client assignment error:", error.message);
+    console.error("Client creation error:", error.message);
 
     return res.status(500).json({
-      message: "Failed to update staff assignment.",
-
+      message: "Failed to create client.",
     });
   }
 });
 
+
+// PATCH /api/clients/:id
+// PARTNER ONLY: Edit client details
+router.patch(
+  "/:id",
+  protect,
+  authorize("partner"),
+  requireClientAccess((req) => req.params.id),
+  async (req, res) => {
+    try {
+      const client = req.client;
+      const { name, email, phone, company, address, status } = req.body;
+
+      if (name !== undefined) {
+        if (typeof name !== "string" || !name.trim()) {
+          return res.status(400).json({ message: "Valid name is required." });
+        }
+        client.name = name.trim();
+      }
+
+      if (email !== undefined) {
+  if (
+    typeof email !== "string" ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  ) {
+    return res.status(400).json({
+      message: "Valid email is required.",
+    });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const linkedUser = await User.findOne({
+    client: client._id,
+    role: "client",
+    firm: req.user.firm,
+  });
+
+  const existingUser = await User.findOne({
+    email: normalizedEmail,
+    ...(linkedUser ? { _id: { $ne: linkedUser._id } } : {}),
+  });
+
+  if (existingUser) {
+    return res.status(409).json({
+      message: "This email is already used by another account.",
+    });
+  }
+
+  if (!linkedUser) {
+    return res.status(404).json({
+      message: "Linked client login account not found.",
+    });
+  }
+
+  client.email = normalizedEmail;
+  linkedUser.email = normalizedEmail;
+
+  await linkedUser.save();
+}
+
+      if (phone !== undefined) {
+        if (typeof phone !== "string" || !phone.trim()) {
+          return res.status(400).json({ message: "Valid phone is required." });
+        }
+        client.phone = phone.trim();
+      }
+
+      if (company !== undefined) {
+        client.company = typeof company === "string" ? company.trim() : "";
+      }
+
+      if (address !== undefined) {
+        client.address = typeof address === "string" ? address.trim() : "";
+      }
+
+      if (status !== undefined) {
+        if (!["active", "inactive"].includes(status)) {
+          return res.status(400).json({ message: "Invalid client status." });
+        }
+        client.status = status;
+      }
+
+      await client.save();
+
+      const updatedClient = await Client.findById(client._id)
+        .populate("assignedStaff", "name email designation");
+
+      return res.status(200).json({
+        message: "Client updated successfully.",
+        client: updatedClient,
+      });
+    } catch (error) {
+      console.error("Client update error:", error.message);
+      return res.status(500).json({
+        message: "Failed to update client.",
+      });
+    }
+  }
+);
+// PATCH /api/clients/:id/assign
+// PARTNER ONLY: Assign, reassign or unassign staff
+router.patch(
+  "/:id/assign",
+  protect,
+  authorize("partner"),
+  requireClientAccess((req) => req.params.id),
+  async (req, res) => {
+    try {
+      const { assignedStaffId } = req.body;
+      const client = req.client;
+
+      // Remove the current staff assignment
+      if (assignedStaffId === null) {
+        const previousStaffId = client.assignedStaff
+          ? String(client.assignedStaff)
+          : null;
+
+        if (!previousStaffId) {
+          return res.status(400).json({
+            message: "No staff assignment exists for this client.",
+          });
+        }
+
+        client.assignedStaff = null;
+        await client.save();
+
+        try {
+          await ActivityLog.create({
+            user: req.user._id,
+            action: "access_revoke",
+            client: client._id,
+            details: `Staff access removed from client ${client.name}. Previous staff ID: ${previousStaffId}`,
+          });
+        } catch (logError) {
+          console.error(
+            "Staff access revoke logging failed:",
+            logError.message
+          );
+        }
+
+        return res.status(200).json({
+          message: "Staff assignment removed successfully.",
+          client,
+        });
+      }
+
+      // Validate staff ID
+      if (
+        typeof assignedStaffId !== "string" ||
+        !mongoose.Types.ObjectId.isValid(assignedStaffId)
+      ) {
+        return res.status(400).json({
+          message: "A valid staff ID is required.",
+        });
+      }
+
+      // Verify staff belongs to the same firm and is active
+      const staff = await User.findOne({
+        _id: assignedStaffId,
+        firm: req.user.firm,
+        role: "staff",
+        isActive: true,
+      });
+
+      if (!staff) {
+        return res.status(404).json({
+          message: "Active staff member not found in your firm.",
+        });
+      }
+
+      // Capture previous assignment before changing it
+      const previousStaffId = client.assignedStaff
+        ? String(client.assignedStaff)
+        : null;
+
+      const newStaffId = String(staff._id);
+
+      // Update staff assignment
+      client.assignedStaff = staff._id;
+      await client.save();
+
+      // Log access changes only when the assignment changes
+      if (previousStaffId !== newStaffId) {
+        try {
+          if (previousStaffId) {
+            await ActivityLog.create({
+              user: req.user._id,
+              action: "access_revoke",
+              client: client._id,
+              details: `Staff access revoked from previous staff ID: ${previousStaffId} for client ${client.name}`,
+            });
+          }
+
+          await ActivityLog.create({
+            user: req.user._id,
+            action: "access_grant",
+            client: client._id,
+            details: `Staff access granted to ${staff.name} (${staff._id}) for client ${client.name}`,
+          });
+        } catch (logError) {
+          console.error(
+            "Staff assignment logging failed:",
+            logError.message
+          );
+        }
+      }
+
+      const updatedClient = await Client.findById(client._id)
+        .populate("assignedStaff", "name email designation");
+
+      return res.status(200).json({
+        message: "Staff assigned successfully.",
+        client: updatedClient,
+      });
+    } catch (error) {
+      console.error("Client assignment error:", error.message);
+
+      return res.status(500).json({
+        message: "Failed to update staff assignment.",
+      });
+    }
+  }
+);
 
 // POST /api/checklists/ai-suggestions
 // Generate AI checklist suggestions for an accessible client
-router.post("/ai-suggestions", protect, async (req, res) => {
-  try {
-    const { clientId } = req.body;
-    const user = req.user;
+router.post(
+  "/ai-suggestions",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const client = req.client;
 
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({
-        message: "A valid client ID is required.",
+      const existingTasks = await Checklist.find({
+        client: client._id,
+        firm: user.firm,
+      }).select("title");
+
+      const suggestions = await generateChecklistSuggestions(
+        {
+          status: client.status,
+        },
+        existingTasks
+      );
+
+      return res.status(200).json({
+        message: "AI suggestions generated successfully.",
+        suggestions,
+      });
+    } catch (error) {
+      console.error("AI checklist suggestion error:", error.message);
+
+      return res.status(503).json({
+        message:
+          "AI suggestions are temporarily unavailable. Please use manual checklist entry.",
       });
     }
-
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({
-        message: "Only partners and staff can generate suggestions.",
-      });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
-
-    // Staff can only access their assigned clients
-    if (
-      user.role === "staff" &&
-      (!client.assignedStaff ||
-        client.assignedStaff.toString() !== user._id.toString())
-    ) {
-      return res.status(403).json({
-        message: "You are not assigned to this client.",
-      });
-    }
-
-    const existingTasks = await Checklist.find({
-      client: client._id,
-      firm: user.firm,
-    }).select("title");
-
-    const suggestions = await generateChecklistSuggestions(
-      {
-        status: client.status,
-      },
-      existingTasks
-    );
-
-    return res.status(200).json({
-      message: "AI suggestions generated successfully.",
-      suggestions,
-    });
-  } catch (error) {
-    console.error("AI checklist suggestion error:", error.message);
-
-    return res.status(503).json({
-      message: "AI suggestions are temporarily unavailable. Please use manual checklist entry.",
-    });
   }
-});
-
+);
 
 // POST /api/checklists/ai-suggestions/approve
 // Save only suggestions explicitly approved by staff or partner
-router.post("/ai-suggestions/approve", protect, async (req, res) => {
-  try {
-    const { clientId, suggestions } = req.body;
-    const user = req.user;
+router.post(
+  "/ai-suggestions/approve",
+  protect,
+  authorize("partner", "staff"),
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
+    try {
+      const { suggestions } = req.body;
+      const user = req.user;
+      const client = req.client;
 
-    if (!["partner", "staff"].includes(user.role)) {
-      return res.status(403).json({
-        message: "Access denied.",
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return res.status(400).json({
-        message: "A valid client ID is required.",
-      });
-    }
-
-    if (
-      !Array.isArray(suggestions) ||
-      suggestions.length === 0 ||
-      suggestions.length > 5
-    ) {
-      return res.status(400).json({
-        message: "Please approve between 1 and 5 suggestions.",
-      });
-    }
-
-    const client = await Client.findOne({
-      _id: clientId,
-      firm: user.firm,
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found.",
-      });
-    }
-
-    if (
-      user.role === "staff" &&
-      (!client.assignedStaff ||
-        client.assignedStaff.toString() !== user._id.toString())
-    ) {
-      return res.status(403).json({
-        message: "You are not assigned to this client.",
-      });
-    }
-
-    const existingTasks = await Checklist.find({
-      client: client._id,
-      firm: user.firm,
-    }).select("title");
-
-    const existingTitles = new Set(
-      existingTasks.map((task) => task.title.trim().toLowerCase())
-    );
-
-    const approvedTasks = [];
-
-    for (const task of suggestions) {
       if (
-        !task ||
-        typeof task.title !== "string" ||
-        typeof task.description !== "string" ||
-        typeof task.category !== "string"
+        !Array.isArray(suggestions) ||
+        suggestions.length === 0 ||
+        suggestions.length > 5
       ) {
         return res.status(400).json({
-          message: "Each suggestion must contain title, description and category.",
+          message: "Please approve between 1 and 5 suggestions.",
         });
       }
 
-      const title = task.title.trim().slice(0, 150);
-      const description = task.description.trim().slice(0, 500);
-      const category = task.category.trim().slice(0, 50);
-
-      if (!title || !description || !category) {
-        return res.status(400).json({
-          message: "Checklist fields cannot be empty.",
-        });
-      }
-
-      if (existingTitles.has(title.toLowerCase())) {
-        continue;
-      }
-
-      existingTitles.add(title.toLowerCase());
-
-      approvedTasks.push({
-        title,
-        description,
-        category,
+      const existingTasks = await Checklist.find({
         client: client._id,
         firm: user.firm,
-        assignedTo: client.assignedStaff || null,
-        createdBy: user._id,
+      }).select("title");
+
+      const existingTitles = new Set(
+        existingTasks.map((task) => task.title.trim().toLowerCase())
+      );
+
+      const approvedTasks = [];
+
+      for (const task of suggestions) {
+        if (
+          !task ||
+          typeof task.title !== "string" ||
+          typeof task.description !== "string" ||
+          typeof task.category !== "string"
+        ) {
+          return res.status(400).json({
+            message:
+              "Each suggestion must contain title, description and category.",
+          });
+        }
+
+        const title = task.title.trim().slice(0, 150);
+        const description = task.description.trim().slice(0, 500);
+        const category = task.category.trim().slice(0, 50);
+
+        if (!title || !description || !category) {
+          return res.status(400).json({
+            message: "Checklist fields cannot be empty.",
+          });
+        }
+
+        if (existingTitles.has(title.toLowerCase())) {
+          continue;
+        }
+
+        existingTitles.add(title.toLowerCase());
+
+        approvedTasks.push({
+          title,
+          description,
+          category,
+          client: client._id,
+          firm: user.firm,
+          assignedTo: client.assignedStaff || null,
+          createdBy: user._id,
+        });
+      }
+
+      if (approvedTasks.length === 0) {
+        return res.status(400).json({
+          message: "No new checklist tasks to save.",
+        });
+      }
+
+      const savedTasks = await Checklist.insertMany(approvedTasks);
+
+      return res.status(201).json({
+        message: "Approved checklist suggestions saved successfully.",
+        count: savedTasks.length,
+        checklists: savedTasks,
+      });
+    } catch (error) {
+      console.error("AI checklist approval error:", error.message);
+
+      return res.status(500).json({
+        message: "Failed to save approved checklist suggestions.",
       });
     }
-
-    if (approvedTasks.length === 0) {
-      return res.status(400).json({
-        message: "No new checklist tasks to save.",
-      });
-    }
-
-    const savedTasks = await Checklist.insertMany(approvedTasks);
-
-    return res.status(201).json({
-      message: "Approved checklist suggestions saved successfully.",
-      count: savedTasks.length,
-      checklists: savedTasks,
-    });
-  } catch (error) {
-    console.error("AI checklist approval error:", error.message);
-
-    return res.status(500).json({
-      message: "Failed to save approved checklist suggestions.",
-    });
   }
-});
-
+);
 
 module.exports = router;

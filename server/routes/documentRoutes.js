@@ -4,13 +4,19 @@ const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
 
+const supabase = require("../config/supabase");
+
 const router = express.Router();
 
 const Document = require("../models/Document");
 const Client = require("../models/Client");
-const { protect } = require("../middleware/authMiddleware");
+const {
+  protect,
+  userCanAccessClient,
+  requireClientAccess,
+} = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
-const supabase = require("../config/supabase");
+
 
 const SecureDownload = require("../models/SecureDownload");
 const User = require("../models/User");
@@ -76,7 +82,27 @@ const handleUpload = (req, res, next) => {
 // Upload document to Supabase Storage
 // Auditor is not allowed to upload.
 
-router.post("/", protect, handleUpload, async (req, res) => {
+router.post(
+  "/",
+  protect,
+  (req, res, next) => {
+    if (req.user.role === "auditor") {
+      return res.status(403).json({
+        message: "Access denied.",
+      });
+    }
+
+    if (req.user.role === "client" && !req.user.client) {
+      return res.status(400).json({
+        message: "Client account is not linked.",
+      });
+    }
+
+    next();
+  },
+  handleUpload,
+  requireClientAccess((req) => req.body.clientId),
+  async (req, res) => {
   let uploadedStoragePath = null;
 
   try {
@@ -87,35 +113,7 @@ router.post("/", protect, handleUpload, async (req, res) => {
     }
 
     const user = req.user;
-
-    let clientFilter = {
-      _id: req.body.clientId,
-      firm: user.firm,
-    };
-
-    if (user.role === "staff") {
-      clientFilter.assignedStaff = user._id;
-    } else if (user.role === "client") {
-      if (!user.client) {
-        return res.status(400).json({
-          message: "Client account is not linked.",
-        });
-      }
-
-      clientFilter._id = user.client;
-    } else if (user.role !== "partner") {
-      return res.status(403).json({
-        message: "Access denied.",
-      });
-    }
-
-    const client = await Client.findOne(clientFilter);
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found or access denied.",
-      });
-    }
+    const client = req.client;
 
     const storedName =
       crypto.randomBytes(16).toString("hex") +
@@ -272,62 +270,22 @@ router.get("/:id/open", protect, async (req, res) => {
   try {
     const user = req.user;
 
-    const document = await Document.findOne({
-      _id: req.params.id,
-      firm: user.firm,
-    });
 
+ const document = await Document.findOne({
+  _id: req.params.id,
+  firm: user.firm,
+});
     if (!document) {
-      return res.status(404).json({
-        message: "Document not found or access denied.",
-      });
-    }
+  return res.status(404).json({
+    message: "Document not found.",
+  });
+}
 
-    // Check role-based access.
+    const client = await Client.findById(document.client);
 
-    if (user.role === "staff") {
-      const assignedClient = await Client.findOne({
-        _id: document.client,
-        firm: user.firm,
-        assignedStaff: user._id,
-      });
-
-      if (!assignedClient) {
-        return res.status(404).json({
-          message: "Document not found or access denied.",
-        });
-      }
-
-    } else if (user.role === "client") {
-      if (
-        !user.client ||
-        document.client.toString() !== user.client.toString()
-      ) {
-        return res.status(404).json({
-          message: "Document not found or access denied.",
-        });
-      }
-
-    } else if (user.role === "auditor") {
-      const assignedClient = await Client.findOne({
-        _id: document.client,
-        firm: user.firm,
-      });
-
-      const hasAssignment = (user.assignedClients || []).some(
-        (clientId) =>
-          clientId.toString() === document.client.toString()
-      );
-
-      if (!assignedClient || !hasAssignment) {
-        return res.status(404).json({
-          message: "Document not found or access denied.",
-        });
-      }
-
-    } else if (user.role !== "partner") {
+    if (!client || !userCanAccessClient(user, client)) {
       return res.status(403).json({
-        message: "Access denied.",
+        message: "Access denied. You do not have permission to access this client.",
       });
     }
 
@@ -414,56 +372,12 @@ router.get("/:id/open", protect, async (req, res) => {
 // Used for secure download generation and verification.
 
 const canAccessDocument = async (user, document) => {
-  if (
-    !user ||
-    !user.isActive ||
-    !user.firm ||
-    !document.firm ||
-    user.firm.toString() !== document.firm.toString()
-  ) {
+  if (!user || !document) {
     return false;
   }
 
-  if (user.role === "partner") {
-    return true;
-  }
-
-  if (user.role === "staff") {
-    const assignedClient = await Client.findOne({
-      _id: document.client,
-      firm: user.firm,
-      assignedStaff: user._id,
-    });
-
-    return Boolean(assignedClient);
-  }
-
-  if (user.role === "client") {
-    return Boolean(
-      user.client &&
-      document.client.toString() === user.client.toString()
-    );
-  }
-
-  if (user.role === "auditor") {
-    const hasAssignment = (user.assignedClients || []).some(
-      (clientId) =>
-        clientId.toString() === document.client.toString()
-    );
-
-    if (!hasAssignment) {
-      return false;
-    }
-
-    const assignedClient = await Client.findOne({
-      _id: document.client,
-      firm: user.firm,
-    });
-
-    return Boolean(assignedClient);
-  }
-
-  return false;
+  const client = await Client.findById(document.client);
+  return userCanAccessClient(user, client);
 };
 
 
@@ -476,13 +390,13 @@ router.post("/:id/download-link", protect, async (req, res) => {
     const user = req.user;
 
     const document = await Document.findOne({
-      _id: req.params.id,
-      firm: user.firm,
-    });
+  _id: req.params.id,
+  firm: user.firm,
+});
 
     if (!document) {
       return res.status(404).json({
-        message: "Document not found or access denied.",
+        message: "Document not found.",
       });
     }
 
@@ -531,15 +445,34 @@ router.post("/:id/download-link", protect, async (req, res) => {
 // GET /api/documents/download/:token
 // Verify and consume a secure download link.
 
-router.get("/download/:token", async (req, res) => {
+router.get("/download/:token", protect, async (req, res) => {
   try {
     const rawToken = req.params.token;
 
-    if (!/^[a-fA-F0-9]{64}$/.test(rawToken)) {
-      return res.status(400).json({
-        message: "Invalid download link.",
-      });
-    }
+    const logBlockedDownload = async (reason, documentId = null) => {
+  try {
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "blocked",
+      blocked: true,
+      document: documentId,
+      details: `Blocked download attempt: ${reason}`,
+    });
+  } catch (logError) {
+    console.error(
+      "Blocked download logging failed:",
+      logError.message
+    );
+  }
+};
+
+   if (!/^[a-fA-F0-9]{64}$/.test(rawToken)) {
+  await logBlockedDownload("Invalid download token");
+
+  return res.status(400).json({
+    message: "Invalid download link.",
+  });
+}
 
     const tokenHash = hashDownloadToken(rawToken);
 
@@ -550,20 +483,35 @@ router.get("/download/:token", async (req, res) => {
     });
 
     if (!downloadRecord) {
-      return res.status(401).json({
-        message: "Download link is invalid, expired or already used.",
-      });
-    }
+  await logBlockedDownload(
+    "Download link is invalid, expired or already used"
+  );
+
+  return res.status(401).json({
+    message: "Download link is invalid, expired or already used.",
+  });
+}
 
     // Recheck current user status from MongoDB.
 
-    const user = await User.findById(downloadRecord.user);
+    // Verify that the authenticated JWT user owns this download link.
 
-    if (!user || !user.isActive) {
-      return res.status(403).json({
-        message: "User account is inactive or unavailable.",
-      });
-    }
+const user = req.user;
+
+if (
+  !user ||
+  !user.isActive ||
+  user._id.toString() !== downloadRecord.user.toString()
+) {
+  await logBlockedDownload(
+    "Inactive user or download link belongs to another user",
+    downloadRecord.document
+  );
+
+  return res.status(403).json({
+    message: "You are not authorized to use this download link.",
+  });
+}
 
     // Recheck current document and firm.
 
@@ -573,20 +521,30 @@ router.get("/download/:token", async (req, res) => {
     });
 
     if (!document) {
-      return res.status(404).json({
-        message: "Document not found or access denied.",
-      });
-    }
+  await logBlockedDownload(
+    "Document not found or does not belong to the user's firm",
+    downloadRecord.document
+  );
+
+  return res.status(404).json({
+    message: "Document not found or access denied.",
+  });
+}
 
     // Recheck current ownership, staff assignment or auditor assignment.
 
     const hasAccess = await canAccessDocument(user, document);
 
     if (!hasAccess) {
-      return res.status(403).json({
-        message: "Document access has been revoked.",
-      });
-    }
+  await logBlockedDownload(
+    "Document access has been revoked",
+    document._id
+  );
+
+  return res.status(403).json({
+    message: "Document access has been revoked.",
+  });
+}
 
     // Atomically consume the link to prevent reuse.
 
@@ -603,11 +561,15 @@ router.get("/download/:token", async (req, res) => {
     );
 
     if (!consumedLink) {
-      return res.status(401).json({
-        message: "Download link is invalid, expired or already used.",
-      });
-    }
+  await logBlockedDownload(
+    "Download link expired or was already consumed",
+    document._id
+  );
 
+  return res.status(401).json({
+    message: "Download link is invalid, expired or already used.",
+  });
+}
     // Validate private storage path.
 
     if (

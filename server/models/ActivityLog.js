@@ -10,8 +10,21 @@ const activityLogSchema = new mongoose.Schema(
 
     action: {
       type: String,
-      enum: ["login", "upload", "open", "download"],
+      enum: [
+        "login",
+        "upload",
+        "open",
+        "download",
+        "blocked",
+        "access_grant",
+        "access_revoke",
+      ],
       required: true,
+    },
+
+    blocked: {
+      type: Boolean,
+      default: false,
     },
 
     document: {

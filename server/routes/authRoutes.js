@@ -279,4 +279,79 @@ router.post("/magic-link/verify", async (req, res) => {
   }
 });
 
+
+// POST /api/auth/staff-invitation/verify
+// Staff members use their invitation token to set their password.
+router.post("/staff-invitation/verify", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        message: "Invitation token and password are required.",
+      });
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      return res.status(400).json({
+        message: "Invalid invitation token.",
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: "Password must contain at least 8 characters.",
+      });
+    }
+
+    const tokenHash = hashMagicToken(token);
+
+    // Verify and consume the invitation token.
+    const invitation = await MagicLink.findOneAndUpdate(
+      {
+        tokenHash,
+        usedAt: null,
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        $set: { usedAt: new Date() },
+      },
+      { new: true }
+    );
+
+    if (!invitation) {
+      return res.status(400).json({
+        message: "Invitation link is invalid, expired, or already used.",
+      });
+    }
+
+    const staff = await User.findOne({
+      _id: invitation.user,
+      role: "staff",
+      isActive: true,
+    });
+
+    if (!staff) {
+      return res.status(404).json({
+        message: "Active staff account not found.",
+      });
+    }
+
+    // User model automatically hashes the password before saving.
+    staff.password = password;
+    await staff.save();
+
+    return res.status(200).json({
+      message: "Password created successfully. You can now log in.",
+    });
+  } catch (error) {
+    console.error("Staff password setup error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to set staff password.",
+    });
+  }
+});
+
+
 module.exports = router;
