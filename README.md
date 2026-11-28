@@ -1,408 +1,235 @@
 # ClientLocker – Secure Document Management Portal
 
-A secure, role-based document management platform developed for **Vaigai Vel & Associates** as part of the **Vizdale Full-Stack Developer Internship**.
+ClientLocker is a secure document management and client management platform designed for accounting firms to manage clients, staff, documents and checklist tasks in one place.
 
-ClientLocker helps firms manage clients, staff, documents, checklists, and access permissions through a centralized web application.
+**Live link:** https://client-locker-gules.vercel.app/
 
-## Project Links
+**Backend link:** https://client-locker.onrender.com
 
-- **Live Application:** https://client-locker-gules.vercel.app/
-- **Backend API:** https://client-locker.onrender.com
-- **GitHub Repository:** https://github.com/Vishal0504-tech/client-locker
+**GitHub repository:** https://github.com/Vishal0504-tech/client-locker
 
-## Demo Videos
+## Recordings
 
-- **Milestone 2 – Application Workflow:** https://drive.google.com/file/d/1UJRQ7t9y3Cci7qf9F_2su0NTC1vvT0df/view?usp=sharing
-- **Milestone 3 – AI Checklist Suggestion Demo:** https://drive.google.com/file/d/13vxZRjkGU5zzJaxGiy0BOByXVi90Xw5q/view?usp=sharing
+- **M2 – 60-second working flow:** [Watch video](https://drive.google.com/file/d/1UJRQ7t9y3Cci7qf9F_2su0NTC1vvT0df/view?usp=sharing)
+- **M3 – AI feature demonstration:** [Watch video](https://drive.google.com/file/d/13vxZRjkGU5zzJaxGiy0BOByXVi90Xw5q/view?usp=sharing)
+- **M4 – 2-minute final demonstration:** [[Watch Video](https://drive.google.com/file/d/1kjRYThsEs2W_g4o01hY_UHA8tn25Z6p2/view?usp=sharing)]
 
-## About the Project
+All recordings are shared through Google Drive with anyone-with-the-link viewer access.
 
-ClientLocker is designed to simplify document management and improve secure collaboration between partners, staff members, clients, and auditors.
+## Test logins
 
-The application provides role-based access control so that each user can access only the information and operations permitted for their role.
-
-The third milestone extends the application with advanced access restrictions, auditor access, secure document downloads, client Magic Link authentication, and AI-powered checklist suggestions.
-
-## User Roles
-
-| Role | Permissions |
-|---|---|
-| Partner | Manage clients, staff, documents, checklists, and firm activities |
-| Staff | Access assigned clients and manage permitted document and checklist operations |
-| Client | Access their own dashboard and permitted documents |
-| Auditor | View-only access to authorized information |
-
-## Main Features
-
-### 1. Authentication and Authorization
-- Secure login using JWT authentication.
-- Password hashing using bcrypt.
-- Role-based access control.
-- Protected backend API routes.
-- Separate permissions for Partner, Staff, Client, and Auditor roles.
-
-### 2. Dashboard
-- Overview of documents, clients, staff, and pending tasks.
-- Role-specific dashboard information.
-- Recent activity information.
-
-### 3. Client Management
-- View and manage client records.
-- Assign clients to staff members.
-- Restrict staff access to assigned clients.
-- Ensure clients can access only their own information.
-
-### 4. Staff Management
-- View staff information.
-- Manage staff access.
-- Control which clients staff members can access.
-
-### 5. Document Management
-- Upload client documents.
-- Store files using private Supabase Storage.
-- Open authorized documents securely.
-- Restrict document access based on user roles and permissions.
-
-### 6. Checklist Management
-- Display client-specific checklist items.
-- Track pending and completed tasks.
-- Update checklist status based on permissions.
-
-### 7. Client Magic Link Authentication
-- Support passwordless client login using email Magic Links.
-- Generate time-limited authentication links.
-- Validate Magic Link tokens before login.
-- Redirect authenticated clients to their respective dashboards.
-
-### 8. Secure Download Links
-- Generate expiring document download links.
-- Restrict access to authorized users.
-- Validate download link expiry before allowing access.
-
-### 9. Auditor Role
-- Introduced a separate Auditor role.
-- Provides view-only access to authorized records.
-- Prevents unauthorized modification of application data.
-
-### 10. Activity Logging and Access Management
-- Record important user activities.
-- Track document-related actions.
-- Support access removal.
-- Maintain activity records for monitoring user operations.
-
-### 11. AI-Powered Checklist Suggestions
-- Integrated Google Gemini AI for document-based checklist suggestions.
-- Analyze uploaded documents.
-- Generate relevant checklist suggestions based on document content.
-- Help users identify checklist items that may be required for a document.
-
-## Technology Stack
-
-| Category | Technologies |
-|---|---|
-| Frontend | React.js, Vite, CSS |
-| Backend | Node.js, Express.js |
-| Database | MongoDB Atlas |
-| File Storage | Supabase Storage |
-| Authentication | JWT, bcrypt |
-| AI Integration | Google Gemini API |
-| Email Integration | Resend |
-| API Communication | Axios |
-| File Upload | Multer |
-| Testing | Jest, Supertest |
-| Version Control | Git, GitHub |
-| Frontend Deployment | Vercel |
-| Backend Deployment | Render |
-| CI/CD | GitHub Actions |
-
-## System Architecture
-
-```text
-                 USER
-                   |
-                   v
-         React + Vite Frontend
-               (Vercel)
-                   |
-                   v
-           Express REST API
-               (Render)
-                   |
-          +--------+--------+
-          |        |        |
-          v        v        v
-       MongoDB  Supabase  Gemini AI
-       Atlas    Storage   API
-          |        |
-          v        v
-      Application Private
-         Data     Documents
-
-                   |
-                   v
-                Resend
-             Email Service
-```
-
-## Project Structure
-
-```text
-client-locker/
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
-├── docs/
-│   └── PLAN.pdf
-│
-├── public/
-│
-├── src/
-│   ├── assets/
-│   │   ├── hero.png
-│   │   ├── react.svg
-│   │   └── vite.svg
-│   │
-│   ├── services/
-│   │   └── api.js
-│   │
-│   ├── App.jsx
-│   ├── App.css
-│   ├── index.css
-│   └── main.jsx
-│
-├── server/
-│   ├── config/
-│   │   ├── db.js
-│   │   └── supabase.js
-│   │
-│   ├── middleware/
-│   │   ├── authMiddleware.js
-│   │   └── uploadMiddleware.js
-│   │
-│   ├── models/
-│   │   ├── ActivityLog.js
-│   │   ├── Checklist.js
-│   │   ├── Client.js
-│   │   ├── Document.js
-│   │   ├── Firm.js
-│   │   ├── MagicLink.js
-│   │   ├── SecureDownload.js
-│   │   └── User.js
-│   │
-│   ├── routes/
-│   │   ├── activityRoutes.js
-│   │   ├── auditorRoutes.js
-│   │   ├── authRoutes.js
-│   │   ├── checklistRoutes.backup.js
-│   │   ├── checklistRoutes.js
-│   │   ├── clientRoutes.js
-│   │   ├── dashboardRoutes.js
-│   │   ├── documentRoutes.js
-│   │   └── staffRoutes.js
-│   │
-│   ├── scripts/
-│   │   └── expireTestDownload.js
-│   │
-│   ├── services/
-│   │   └── aiChecklistService.js
-│   │
-│   ├── tests/
-│   │   ├── app.test.js
-│   │   └── setup.js
-│   │
-│   ├── uploads/
-│   │
-│   ├── utils/
-│   │   ├── magicLinkUtils.js
-│   │   └── secureDownloadUtils.js
-│   │
-│   ├── app.js
-│   ├── seed.js
-│   ├── server.js
-│   ├── package.json
-│   └── .gitignore
-│
-├── package.json
-├── package-lock.json
-├── vercel.json
-└── README.md
-```
-
-*Note: The project structure excludes node_modules and dependency files. The uploads folder contains uploaded demonstration documents.*
-
-## Demo Login Credentials
-
-The following are sample accounts created for application demonstration.
+The application supports three roles:
 
 | Role | Email | Password |
 |---|---|---|
-| Partner | partner1@clientlocker.com | Partner@123 |
-| Staff | staff1@clientlocker.com | Staff@123 |
-| Client | ramesh@example.com | Client@123 |
+| Partner | Add fictional demo email | Add demo password |
+| Staff | Add fictional demo email | Add demo password |
+| Client | Add fictional demo email | Add demo password |
 
-Client accounts using Magic Link authentication should follow the email login flow.
+Only dedicated made-up demonstration accounts should be published here. Do not publish real user credentials or passwords.
 
-**Note:** These are demonstration credentials. Do not use real client information or production passwords in this repository.
+## What it does
 
-## Database and Sample Data
+The five main things users can do:
 
-The seed script is used to populate the application with sample records.
+1. **Dashboard Management:** View important information such as total documents, clients, staff and pending tasks.
+2. **Client Management:** Add, view and update client information.
+3. **Staff Management:** Manage staff accounts and invite staff members.
+4. **Document Management:** Upload, store and access client documents securely.
+5. **Checklist Management:** Create, view, update and track checklist tasks for clients.
 
-The existing sample dataset includes:
+The application also provides role-based access control, authentication and activity tracking.
 
-- 1 firm
-- 2 partners
-- 6 staff members
-- 10 clients
-- 50 checklist items
+## The AI feature
 
-The seed script should be used carefully because it may clear and recreate existing sample records.
+- **What it does:** The AI feature generates relevant checklist task suggestions for accounting staff based on the client's business type, current status and existing checklist task titles.
+- **AI model:** Gemini 3.5 Flash-Lite through the Google Gemini API.
+- **How it works:** The backend prepares a prompt using client details and sends it to Gemini. The response is processed into structured JSON containing task titles, descriptions and categories.
+- **Duplicate prevention:** The prompt instructs the AI not to suggest tasks that already exist.
+- **Error handling:** The service retries certain failed API requests up to three times. If the service remains unavailable, it returns a temporary-unavailable error.
+- **If AI is unavailable:** AI suggestions cannot be generated until the service becomes available again. Other application features remain separate from this AI service.
 
-## Installation and Local Setup
+The AI feature suggests checklist tasks; it does not directly analyse uploaded document contents.
 
-### Prerequisites
+## My stack
 
-- Node.js and npm
-- MongoDB Atlas account or MongoDB connection
-- Supabase project
+| Part | Technology | Why I used it |
+|---|---|---|
+| Frontend | React 19 | To build reusable and interactive user interfaces |
+| Build tool | Vite | For fast development and production builds |
+| Styling | CSS | To create the application interface |
+| Backend | Node.js | To implement server-side functionality |
+| Backend framework | Express.js | To create REST API endpoints |
+| Database | MongoDB Atlas | To store application data |
+| Authentication | JWT and bcryptjs | To manage authentication and password hashing |
+| File storage | Supabase Storage | To store documents securely |
+| AI integration | Gemini 3.5 Flash-Lite | To generate checklist suggestions |
+| Email service | Resend | To support staff invitation emails |
+| API testing | Supertest and Node.js test runner | To test backend endpoints |
+| Deployment | Vercel and Render | To host the frontend and backend |
+| Version control | Git and GitHub | To manage source code and project changes |
+| Development tools | VS Code and Postman | For coding and API testing |
+
+## Main design choices
+
+### Database collections
+
+- Users – Stores partner, staff and client account information.
+- Clients – Stores client details.
+- Documents – Stores document metadata and storage references.
+- Checklists – Stores client checklist tasks.
+- Activities – Stores recent application activities.
+
+### Important design decisions
+
+1. **Role-based access:** Partner, staff and client roles have different permissions.
+2. **Secure authentication:** JWT is used for authentication, and bcryptjs is used for password hashing.
+3. **Private document storage:** Supabase Storage is used for document storage.
+4. **Backend validation:** API routes validate requests and enforce access permissions.
+5. **AI integration:** Gemini generates checklist suggestions based on available client information.
+6. **Error handling:** API failures are handled without treating unavailable AI suggestions as successful results.
+
+## How to run it on your computer
+
+### Requirements
+
+- Node.js
+- npm
+- MongoDB connection
+- Supabase account
 - Gemini API key
-- Resend account for email integration
+- Resend account (for email functionality)
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Vishal0504-tech/client-locker.git
 cd client-locker
 ```
 
-### 2. Install Frontend Dependencies
+### 2. Run the frontend
 
 ```bash
 npm install
-```
-
-### 3. Install Backend Dependencies
-
-```bash
-cd server
-npm install
-```
-
-### 4. Configure Environment Variables
-
-Create a `.env` file inside the server directory and configure the required values according to the environment variable names used in the application.
-
-Typical configuration includes:
-
-```env
-PORT=5000
-MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
-
-SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-
-GEMINI_API_KEY=your_gemini_api_key
-
-RESEND_API_KEY=your_resend_api_key
-RESEND_FROM_EMAIL=ClientLocker <onboarding@resend.dev>
-MAGIC_LINK_TEST_EMAIL=your_verified_test_email
-```
-
-**Important:** Keep all API keys, database credentials, and secret values inside environment variables. Never commit `.env` files to GitHub. Verify the exact variable names against the current backend source code before running the application.
-
-### 5. Start the Backend
-
-```bash
-cd server
 npm run dev
 ```
 
-The backend runs on:
-
-```text
-http://localhost:5000
-```
-
-### 6. Start the Frontend
+### 3. Run the backend
 
 Open another terminal:
 
 ```bash
-cd client-locker
+cd server
+npm install
 npm run dev
 ```
 
-The frontend runs on the local Vite development URL displayed in the terminal.
+### 4. Environment settings
 
-## Automated Testing
+Configure the required environment variables in the appropriate local environment files.
 
-The project includes automated backend tests using Jest and Supertest.
+Settings required include:
 
-The tests are intended to verify application routes, authentication, access permissions, and important backend functionality.
+- PORT
+- MONGO_URI
+- JWT_SECRET
+- FRONTEND_URL
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+- GEMINI_API_KEY
+- RESEND_API_KEY
+- RESEND_FROM_EMAIL
+- MAGIC_LINK_TEST_EMAIL
 
-The Milestone 3 testing requirement includes at least 10 automated tests.
+Never upload real API keys, passwords or secret values to GitHub.
 
-The test files are located in:
+## How to run the tests
 
-```text
-server/
-└── tests/
-    ├── app.test.js
-    └── setup.js
-```
-
-Run the backend tests using the test script configured in `server/package.json`:
+Open the backend terminal:
 
 ```bash
+cd server
+npm install
 npm test
 ```
 
-## Deployment
+The project uses the Node.js built-in test runner with Supertest for API testing.
 
-| Component | Platform |
-|---|---|
-| Frontend | Vercel |
-| Backend | Render |
-| Database | MongoDB Atlas |
-| File Storage | Supabase Storage |
-| AI Service | Google Gemini API |
-| Email Service | Resend |
-| CI/CD | GitHub Actions |
+### Frontend production build
 
-The frontend communicates with the deployed Express backend through API requests.
+From the project root:
 
-## Milestone Progress
+```bash
+npm run build
+```
 
-| Milestone | Work |
-|---|---|
-| M1 | Initial application setup, first page deployment, project planning, and basic workflow |
-| M2 | Backend integration, role-based login, client and staff management, document upload, and dashboard |
-| M3 | Advanced access control, Magic Link login, secure download links, Auditor role, activity tracking, and AI checklist suggestions |
-| M4 | Final improvements, performance optimization, documentation, and final demonstration |
+## Made-up data
 
-## Future Enhancements
+The application uses sample records for development and demonstration purposes.
 
-- Improve document search and filtering.
-- Add more AI-assisted document management features.
-- Improve notification and reminder functionality.
-- Enhance application performance and accessibility.
-- Add further reporting and analytics features.
+The demonstration data should contain no real customers, personal information or confidential business documents.
 
-## Internship Project Information
+All sample users, clients and uploaded demonstration documents must be fictional.
 
-**Project Name:** ClientLocker – Secure Document Management Portal
+## What works
 
-**Organization:** Vizdale
+### Fully working
 
-**Client:** Vaigai Vel & Associates
+- User authentication and role-based access.
+- Partner, staff and client dashboards.
+- Client management.
+- Staff management and invitation flow.
+- Document upload and access.
+- Checklist creation and management.
+- AI-powered checklist suggestions.
+- Activity tracking.
+- Frontend and backend deployment.
 
-**Internship Role:** Full-Stack Developer Intern
+### Partly done
 
-**Repository:** https://github.com/Vishal0504-tech/client-locker
+- AI suggestions depend on the availability and usage limits of the Gemini API.
+- Accessibility and SEO scores can be improved further.
 
- 
+### Skipped
 
- 
+- No additional skipped features are being claimed.
+
+## What I would do differently with more time
+
+- Improve accessibility and SEO.
+- Add more advanced document search and filtering.
+- Improve AI suggestion quality through additional testing.
+- Add more automated tests for different user roles.
+- Improve application monitoring and performance tracking.
+
+## Speed score
+
+Google PageSpeed Insights results:
+
+| Category | Mobile | Desktop |
+|---|---:|---:|
+| Performance | 100 | 100 |
+| Accessibility | 88 | 88 |
+| Best Practices | 100 | 100 |
+| SEO | 82 | 82 |
+
+**Required speed score:** 85+
+
+**Achieved Performance score:** 100/100 on both Mobile and Desktop.
+
+Evidence: `docs/SPEED.png`
+
+[View Mobile PageSpeed report](https://pagespeed.web.dev/analysis/https-client-locker-gules-vercel-app/lejca83bm6c7p17y2rcs55?form_factor=mobile)
+
+## Project documents
+
+- `docs/PLAN.pdf` – Project plan.
+- `docs/REAL_USERS.pdf` – User testing feedback.
+- `docs/AI_NOTES.pdf` – AI testing notes.
+- `docs/SPEED.png` – PageSpeed evidence.
+- `docs/PROGRESS.pdf` – Project progress template.
+
+---
+
+**Project:** ClientLocker  
+**Purpose:** Secure client and document management for accounting firms.
