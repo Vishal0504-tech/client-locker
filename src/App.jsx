@@ -1271,78 +1271,86 @@ if (activePage === 'Checklist') {
 
 
 
-      <div className="table-card">
-        <h3>Checklist Items</h3>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
+<div className="table-card">
+  <h3>Checklist Items</h3>
 
-          <tbody>
-            {checklistsData.length > 0 ? (
-              checklistsData.map((task) => (
-                <tr key={task._id}>
-                  <td>{task.title}</td>
-                  <td>{task.category}</td>
-                  <td>{task.description || '-'}</td>
-                  <td>
-                    <span className="status">
-                      {task.isCompleted ? 'Completed' : 'Pending'}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      disabled={task.isCompleted}
-                      onClick={async () => {
-                        try {
-                          const token = localStorage.getItem('token');
+  <table>
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Category</th>
+        <th>Description</th>
+        <th>Status</th>
+        {!['auditor', 'client'].includes(user?.role) && (
+  <th>Actions</th>
+)}
+      </tr>
+    </thead>
 
-                          await API.patch(
-                            `/checklists/${task._id}`,
-                            { isCompleted: true },
-                            {
-                              headers: {
-                                Authorization: `Bearer ${token}`,
-                              },
-                            }
-                          );
+    <tbody>
+      {checklistsData.length > 0 ? (
+        checklistsData.map((task) => (
+          <tr key={task._id}>
+            <td>{task.title}</td>
+            <td>{task.category}</td>
+            <td>{task.description || '-'}</td>
+            <td>
+              <span className="status">
+                {task.isCompleted ? 'Completed' : 'Pending'}
+              </span>
+            </td>
 
-                          setChecklistsData((previous) =>
-                            previous.map((item) =>
-                              item._id === task._id
-                                ? { ...item, isCompleted: true }
-                                : item
-                            )
-                          );
+            {!['auditor', 'client'].includes(user?.role) && (
+  <td>
+                <button
+                  disabled={task.isCompleted}
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('token');
 
-                        } catch (error) {
-                          alert(
-                            error.response?.data?.message ||
-                            'Unable to update task.'
-                          );
+                      await API.patch(
+                        `/checklists/${task._id}`,
+                        { isCompleted: true },
+                        {
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                          },
                         }
-                      }}
-                    >
-                      {task.isCompleted ? 'Completed' : 'Mark Complete'}
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5">No checklist items found.</td>
-              </tr>
+                      );
+
+                      setChecklistsData((previous) =>
+                        previous.map((item) =>
+                          item._id === task._id
+                            ? { ...item, isCompleted: true }
+                            : item
+                        )
+                      );
+                    } catch (error) {
+                      alert(
+                        error.response?.data?.message ||
+                        'Unable to update task.'
+                      );
+                    }
+                  }}
+                >
+                  {task.isCompleted ? 'Completed' : 'Mark Complete'}
+                </button>
+              </td>
             )}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        ))
+      ) : (
+        <tr>
+          <td colSpan={['auditor', 'client'].includes(user?.role) ? 4 : 5}>
+            No checklist items found.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+
     </>
   );
 }

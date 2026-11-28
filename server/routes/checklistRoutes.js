@@ -152,27 +152,15 @@ router.post(
 
 // PATCH /api/checklists/:id
 // Update checklist completion status
-router.patch("/:id", protect, async (req, res) => {
+
+router.patch("/:id", protect, authorize("partner", "staff"), async (req, res) => {
   try {
     const user = req.user;
     const { isCompleted } = req.body;
 
-    // Validate input
     if (typeof isCompleted !== "boolean") {
       return res.status(400).json({
         message: "isCompleted must be true or false.",
-      });
-    }
-
-    if (user.role === "auditor") {
-      return res.status(403).json({
-        message: "Access denied.",
-      });
-    }
-
-    if (user.role === "client" && !user.client) {
-      return res.status(400).json({
-        message: "Client account is not linked to a client record.",
       });
     }
 
@@ -192,7 +180,7 @@ router.patch("/:id", protect, async (req, res) => {
       });
     }
 
-    // Staff can complete only tasks assigned to them
+    // Staff can update only tasks assigned to them
     if (
       user.role === "staff" &&
       String(checklist.assignedTo) !== String(user._id)
@@ -209,7 +197,6 @@ router.patch("/:id", protect, async (req, res) => {
       message: "Checklist status updated successfully.",
       checklist,
     });
-
   } catch (error) {
     console.error("Checklist update error:", error.message);
 
@@ -218,6 +205,7 @@ router.patch("/:id", protect, async (req, res) => {
     });
   }
 });
+
 
 
 // AI CHECKLIST SUGGESTIONS
