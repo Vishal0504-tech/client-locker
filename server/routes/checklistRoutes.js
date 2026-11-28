@@ -1,7 +1,7 @@
 
 const express = require("express");
 const router = express.Router();
-
+const crypto = require("crypto");
 const Checklist = require("../models/Checklist");
 const Client = require("../models/Client");
 const {
@@ -148,7 +148,124 @@ router.post(
   }
 });
 
+// POST /api/clients
+// PARTNER ONLY: Create client and login account
+router.post("/", protect, authorize("partner"), async (req, res) => {
+  let createdClient = null;
 
+  try {
+    const {
+      name,
+      email,
+      phone,
+      company,
+      address,
+      assignedStaffId,
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !name?.trim() ||
+      !email?.trim() ||
+      !phone?.trim()
+    ) {
+      return res.status(400).json({
+        message: "Name, email and phone are required.",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check whether email already exists
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "An account with this email already exists.",
+      });
+    }
+
+    const existingClient = await Client.findOne({
+      email: normalizedEmail,
+      firm: req.user.firm,
+    });
+
+    if (existingClient) {
+      return res.status(409).json({
+        message: "This client already exists in your firm.",
+      });
+    }
+
+    // Validate optional staff assignment
+    let staff = null;
+
+    if (assignedStaffId) {
+      if (!mongoose.Types.ObjectId.isValid(assignedStaffId)) {
+        return res.status(400).json({
+          message: "Invalid staff ID.",
+        });
+      }
+
+      staff = await User.findOne({
+        _id: assignedStaffId,
+        firm: req.user.firm,
+        role: "staff",
+        isActive: true,
+      });
+
+      if (!staff) {
+        return res.status(404).json({
+          message: "Active staff member not found.",
+        });
+      }
+    }
+
+    // Create client record
+    createdClient = await Client.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      company: company?.trim() || "",
+      address: address?.trim() || "",
+      firm: req.user.firm,
+      assignedStaff: staff?._id || null,
+      status: "active",
+    });
+
+    // Generate random password; User model hashes it automatically
+    const temporaryPassword = crypto.randomBytes(32).toString("hex");
+
+    try {
+      await User.create({
+        name: name.trim(),
+        email: normalizedEmail,
+        password: temporaryPassword,
+        role: "client",
+        firm: req.user.firm,
+        client: createdClient._id,
+        isActive: true,
+      });
+    } catch (userError) {
+      // Roll back client if account creation fails
+      await Client.findByIdAndDelete(createdClient._id);
+      throw userError;
+    }
+
+    return res.status(201).json({
+      message: "Client and login account created successfully.",
+      client: createdClient,
+    });
+
+  } catch (error) {
+    console.error("Client creation error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to create client.",
+    });
+  }
+});
 
 // PATCH /api/checklists/:id
 // Update checklist completion status

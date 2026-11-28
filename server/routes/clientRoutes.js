@@ -2,7 +2,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const router = express.Router();
-
+const crypto = require("crypto");
 const Client = require("../models/Client");
 const User = require("../models/User");
 const ActivityLog = require("../models/ActivityLog");
@@ -78,6 +78,214 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
+// POST /api/clients
+// PARTNER ONLY: Create client and login account
+router.post("/", protect, authorize("partner"), async (req, res) => {
+  let createdClient = null;
+
+  try {
+    const {
+      name,
+      email,
+      phone,
+      company,
+      address,
+      assignedStaffId,
+    } = req.body;
+
+    if (!name?.trim() || !email?.trim() || !phone?.trim()) {
+      return res.status(400).json({
+        message: "Name, email and phone are required.",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "An account with this email already exists.",
+      });
+    }
+
+    const existingClient = await Client.findOne({
+      email: normalizedEmail,
+      firm: req.user.firm,
+    });
+
+    if (existingClient) {
+      return res.status(409).json({
+        message: "This client already exists in your firm.",
+      });
+    }
+
+    let staff = null;
+
+    if (assignedStaffId) {
+      if (!mongoose.Types.ObjectId.isValid(assignedStaffId)) {
+        return res.status(400).json({
+          message: "Invalid staff ID.",
+        });
+      }
+
+      staff = await User.findOne({
+        _id: assignedStaffId,
+        firm: req.user.firm,
+        role: "staff",
+        isActive: true,
+      });
+
+      if (!staff) {
+        return res.status(404).json({
+          message: "Active staff member not found.",
+        });
+      }
+    }
+
+    createdClient = await Client.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      company: company?.trim() || "",
+      address: address?.trim() || "",
+      firm: req.user.firm,
+      assignedStaff: staff?._id || null,
+      status: "active",
+    });
+
+    const temporaryPassword = crypto.randomBytes(32).toString("hex");
+
+    try {
+      await User.create({
+        name: name.trim(),
+        email: normalizedEmail,
+        password: temporaryPassword,
+        role: "client",
+        firm: req.user.firm,
+        client: createdClient._id,
+        isActive: true,
+      });
+    } catch (userError) {
+      await Client.findByIdAndDelete(createdClient._id);
+      throw userError;
+    }
+
+    return res.status(201).json({
+      message: "Client and login account created successfully.",
+      client: createdClient,
+    });
+  } catch (error) {
+    console.error("Client creation error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to create client.",
+    });
+  }
+});
+
+
+// PATCH /api/clients/:id
+// PARTNER ONLY: Edit client details
+router.patch(
+  "/:id",
+  protect,
+  authorize("partner"),
+  requireClientAccess((req) => req.params.id),
+  async (req, res) => {
+    try {
+      const client = req.client;
+      const { name, email, phone, company, address, status } = req.body;
+
+      if (name !== undefined) {
+        if (typeof name !== "string" || !name.trim()) {
+          return res.status(400).json({ message: "Valid name is required." });
+        }
+        client.name = name.trim();
+      }
+
+      if (email !== undefined) {
+  if (
+    typeof email !== "string" ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  ) {
+    return res.status(400).json({
+      message: "Valid email is required.",
+    });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const linkedUser = await User.findOne({
+    client: client._id,
+    role: "client",
+    firm: req.user.firm,
+  });
+
+  const existingUser = await User.findOne({
+    email: normalizedEmail,
+    ...(linkedUser ? { _id: { $ne: linkedUser._id } } : {}),
+  });
+
+  if (existingUser) {
+    return res.status(409).json({
+      message: "This email is already used by another account.",
+    });
+  }
+
+  if (!linkedUser) {
+    return res.status(404).json({
+      message: "Linked client login account not found.",
+    });
+  }
+
+  client.email = normalizedEmail;
+  linkedUser.email = normalizedEmail;
+
+  await linkedUser.save();
+}
+
+      if (phone !== undefined) {
+        if (typeof phone !== "string" || !phone.trim()) {
+          return res.status(400).json({ message: "Valid phone is required." });
+        }
+        client.phone = phone.trim();
+      }
+
+      if (company !== undefined) {
+        client.company = typeof company === "string" ? company.trim() : "";
+      }
+
+      if (address !== undefined) {
+        client.address = typeof address === "string" ? address.trim() : "";
+      }
+
+      if (status !== undefined) {
+        if (!["active", "inactive"].includes(status)) {
+          return res.status(400).json({ message: "Invalid client status." });
+        }
+        client.status = status;
+      }
+
+      await client.save();
+
+      const updatedClient = await Client.findById(client._id)
+        .populate("assignedStaff", "name email designation");
+
+      return res.status(200).json({
+        message: "Client updated successfully.",
+        client: updatedClient,
+      });
+    } catch (error) {
+      console.error("Client update error:", error.message);
+      return res.status(500).json({
+        message: "Failed to update client.",
+      });
+    }
+  }
+);
 // PATCH /api/clients/:id/assign
 // PARTNER ONLY: Assign, reassign or unassign staff
 router.patch(
